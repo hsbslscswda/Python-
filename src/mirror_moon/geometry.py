@@ -1,0 +1,82 @@
+"""Geometry has no Qt, camera, GPU or MediaPipe dependency."""
+
+import math
+
+from .domain import Point, Point3
+
+
+def distance(a: Point, b: Point) -> float:
+    return math.hypot(a[0] - b[0], a[1] - b[1])
+
+
+def angle3(a: Point3, b: Point3, c: Point3) -> float | None:
+    u, v = tuple(x - y for x, y in zip(a, b)), tuple(x - y for x, y in zip(c, b))
+    lengths = math.sqrt(sum(x * x for x in u) * sum(x * x for x in v))
+    if lengths < 1e-9:
+        return None
+    return math.degrees(math.acos(max(-1.0, min(1.0, sum(x * y for x, y in zip(u, v)) / lengths))))
+
+
+def segment_distance(p: Point, a: Point, b: Point) -> tuple[float, float]:
+    dx, dy = b[0] - a[0], b[1] - a[1]
+    n = dx * dx + dy * dy
+    if n < 1e-9:
+        return distance(p, a), -1.0
+    t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / n
+    return distance(p, (a[0] + max(0.0, min(1.0, t)) * dx, a[1] + max(0.0, min(1.0, t)) * dy)), t
+
+
+def crossing(a: Point, b: Point, c: Point, d: Point) -> bool:
+    def cross(u, v):
+        return u[0] * v[1] - u[1] * v[0]
+
+    u, v, w = (b[0] - a[0], b[1] - a[1]), (d[0] - c[0], d[1] - c[1]), (c[0] - a[0], c[1] - a[1])
+    det = cross(u, v)
+    if abs(det) < 1e-8:
+        return False
+    t, s = cross(w, v) / det, cross(w, u) / det
+    ang = angle3((u[0], u[1], 0.0), (0.0, 0.0, 0.0), (v[0], v[1], 0.0))
+    return 0 <= t <= 1 and 0 <= s <= 1 and ang is not None and 35 <= ang <= 145
+
+
+def smoothstep(x: float) -> float:
+    x = max(0.0, min(1.0, x))
+    return x * x * (3.0 - 2.0 * x)
+
+
+class OneEuro:
+    """Original implementation of the published adaptive first-order filter equations."""
+
+    def __init__(self, cutoff=1.5, beta=0.02):
+        self.cutoff, self.beta = cutoff, beta
+        self.last_t = None
+        self.raw = self.value = self.derivative = 0.0
+
+    def __call__(self, x: float, t: float) -> float:
+        if self.last_t is None or t <= self.last_t or t - self.last_t > 0.3:
+            self.last_t, self.raw, self.value, self.derivative = t, x, x, 0.0
+            return x
+        dt = t - self.last_t
+
+        def alpha(c):
+            return 1.0 / (1.0 + 1.0 / (2.0 * math.pi * c * dt))
+
+        dx = (x - self.raw) / dt
+        self.derivative += alpha(1.0) * (dx - self.derivative)
+        self.value += alpha(self.cutoff + self.beta * abs(self.derivative)) * (x - self.value)
+        self.last_t, self.raw = t, x
+        return self.value
+
+
+class Hold:
+    def __init__(self):
+        self.starts: dict[str, float] = {}
+
+    def ready(self, key: str, condition: bool, now: float, duration: float) -> bool:
+        if not condition:
+            self.starts.pop(key, None)
+            return False
+        return now - self.starts.setdefault(key, now) >= duration - 1e-8
+
+    def clear(self):
+        self.starts.clear()
