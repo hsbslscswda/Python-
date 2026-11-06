@@ -1,6 +1,9 @@
 # 工程决策
 
-2026-11-07，基于 `79cddf2` 克隆的实际仓库，本地任务分支 `codex/mirror-moon`。未推送远端、未创建 PR。
+2026-11-07，基于 `79cddf2` 克隆的实际仓库，任务分支 `codex/mirror-moon`。远端同步状态以当前交付包 BASELINE.json 为准。
+
+- v0.1.1：用户在中文解压位置运行后黑屏，界面实际报 Hand 模型文件打不开。已复现同一个存在且校验正确的文件使用原生路径加载失败、使用 `model_asset_buffer` 成功。改为 Python 读文件与 SHA-256 校验，保留字节缓冲，再交给两套 Tasks；不要求用户改目录名，不把模型故障归因于光照。[官方 BaseOptions 接口](https://ai.google.dev/edge/api/mediapipe/python/mp/tasks/BaseOptions) 支持模型字节缓冲。
+- v0.1.1：此前“中文路径”包体测试只改变工作目录，EXE/模型仍在英文目录，是覆盖遗漏。新增真实模型中文安装路径测试，包体测试支持 `--app-dir`，必须指向实际中文交付/解压目录。启动错误完整换行显示，按钮改为重试，不再维持可施法的状态文字。
 
 - 保留现有小模块边界：`domain/tracking/interaction/transport/pipeline/render/app/diagnostics`。Gemini 的任务卡提供验收意图，不要求把现有文件重建成另一套包目录。
 - Python 3.12.15；实际 wheel 为 MediaPipe 1.2.2、OpenCV contrib 5.0.0.93、PySide6 6.12.0、ModernGL 5.13.0、NumPy 2.5.4。导入与模型实测后冻结锁文件。只安装一个 OpenCV 提供者。

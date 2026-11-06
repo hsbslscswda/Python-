@@ -1,5 +1,6 @@
 """Launch the actual onedir executable from a Chinese/space path outside its directory."""
 
+import argparse
 import json
 import os
 import subprocess
@@ -8,8 +9,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_missing_model():
-    directory = ROOT / "dist" / "MirrorMoon"
+def test_missing_model(directory=None):
+    directory = Path(directory or ROOT / "dist" / "MirrorMoon").resolve()
     model = (directory / "_internal" / "assets" / "models" / "hand_landmarker.task").resolve()
     assert model.is_relative_to(directory.resolve()) and model.is_file()
     backup = model.with_suffix(".task.validation-backup")
@@ -36,7 +37,11 @@ def test_missing_model():
 
 
 def main():
-    exe = ROOT / "dist" / "MirrorMoon" / "MirrorMoon.exe"
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--app-dir", type=Path, default=ROOT / "dist" / "MirrorMoon")
+    args = parser.parse_args()
+    app_dir = args.app_dir.resolve()
+    exe = app_dir / "MirrorMoon.exe"
     work = ROOT / "local" / "外部 启动路径"
     work.mkdir(exist_ok=True, parents=True)
     results = []
@@ -77,12 +82,20 @@ def main():
             assert value["pipeline_error"] is None and value["events_emitted"].get("shatter", 0) > 0, value
         if name == "invalid-camera":
             assert "无法打开" in (value["pipeline_error"] or ""), value
-        results.append({"case": name, "exit_code": completed.returncode, "metrics": value})
+        results.append(
+            {
+                "case": name,
+                "exit_code": completed.returncode,
+                "application_path_contains_chinese": any(ord(c) > 127 for c in str(app_dir)),
+                "application_path_characters": len(str(exe)),
+                "metrics": value,
+            }
+        )
         print(name, "passed", flush=True)
     (ROOT / "local" / "package-smoke.json").write_text(
         json.dumps(results, ensure_ascii=False, indent=2), "utf-8"
     )
-    test_missing_model()
+    test_missing_model(app_dir)
     print("missing-model passed", flush=True)
 
 

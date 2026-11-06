@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mirror-moon"
-version = "0.1.0"
+version = "0.1.1"
 description = "镜中取月：本地 MediaPipe 动作交互魔法舞台"
 requires-python = ">=3.12,<3.13"
 dependencies = ["mediapipe", "opencv-contrib-python", "numpy", "PySide6", "moderngl"]

@@ -129,6 +129,8 @@ class Window(QMainWindow):
         layout.addWidget(self.strength)
         footer = QHBoxLayout()
         self.status = QLabel("等待开始")
+        self.status.setWordWrap(True)
+        self.status.setMinimumWidth(0)
         footer.addWidget(self.status, 1)
         self.calibrate_button = QPushButton("20 秒校准")
         self.calibrate_button.clicked.connect(self.begin_calibration)
@@ -399,6 +401,11 @@ class Window(QMainWindow):
                         view = replace(self.data.scene.spell, intensity=0.0, visibility=0.0)
                         self.data.scene = replace(self.data.scene, spell=view)
             status = self.pipeline.status
+            if self.pipeline.error:
+                status = f"识别未启动：{self.pipeline.error}"
+                self.hint.setText("识别未启动，不能施法。请查看下方完整错误，修复后点击重试。")
+                self.start_button.setText("重试摄像头")
+                self.source_label.setText("摄像头/识别未就绪")
             if self.data.scene:
                 status = f"{self.data.scene.features.reason or self.data.scene.spell.quality}    {status}"
             if self.audio.error():

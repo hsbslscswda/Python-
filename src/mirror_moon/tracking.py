@@ -193,14 +193,20 @@ class Tracker:
         if not (directory / "manifest.json").exists():
             raise RuntimeError("缺少模型清单。请运行 tools/prepare_models.py 准备本地模型。")
         manifest = json.loads((directory / "manifest.json").read_text("utf-8"))
+        self.model_buffers = {}
         for name in ("hand_landmarker.task", "pose_landmarker_lite.task"):
             path = directory / name
-            if not path.exists() or hashlib.sha256(path.read_bytes()).hexdigest() != manifest[name]["sha256"]:
+            if not path.exists():
                 raise RuntimeError("缺少模型或校验失败。请运行 tools/prepare_models.py 后再启动。")
+            payload = path.read_bytes()
+            if hashlib.sha256(payload).hexdigest() != manifest[name]["sha256"]:
+                raise RuntimeError("缺少模型或校验失败。请运行 tools/prepare_models.py 后再启动。")
+            self.model_buffers[name] = payload
         base, vision = mp.tasks.BaseOptions, mp.tasks.vision
         self.hands = vision.HandLandmarker.create_from_options(
             vision.HandLandmarkerOptions(
-                base_options=base(model_asset_path=str(directory / "hand_landmarker.task")),
+                # Python handles Unicode Windows paths; the native Tasks path loader does not.
+                base_options=base(model_asset_buffer=self.model_buffers["hand_landmarker.task"]),
                 running_mode=vision.RunningMode.VIDEO,
                 num_hands=2,
             )
@@ -208,7 +214,7 @@ class Tracker:
         try:
             self.pose = vision.PoseLandmarker.create_from_options(
                 vision.PoseLandmarkerOptions(
-                    base_options=base(model_asset_path=str(directory / "pose_landmarker_lite.task")),
+                    base_options=base(model_asset_buffer=self.model_buffers["pose_landmarker_lite.task"]),
                     running_mode=vision.RunningMode.VIDEO,
                     num_poses=1,
                 )
