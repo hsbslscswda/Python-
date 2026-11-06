@@ -14,6 +14,8 @@
 
 PySide6/Qt 使用动态库；发行目录 `_internal` 中保留动态链接形式，第三方许可证与依赖清单在 `THIRD_PARTY_LICENSES`。Qt/PySide 源码入口分别为 https://code.qt.io/cgit/qt/qtbase.git/ 与上述 pyside-setup；按相应版本获取源码及许可。Qt 组件、编解码器等附属许可不能简单概括为 MIT。构建工具收集安装包内许可文件，不删除其通知。
 
+发行程序还包含 PyInstaller 6.22.3 bootloader；其 GPL v2 或更新版本及专门发行例外原文保存在 `THIRD_PARTY_LICENSES/pyinstaller`。PyInstaller 源码：https://github.com/pyinstaller/pyinstaller 。构建工具本身不是 MediaPipe 算法贡献。
+
 ## 官方模型（与库源码分别核查）
 
 - Hand Landmarker float16/1：官方地址、字节数和完整 SHA-256 在 `assets/models/manifest.json`。官方 [Hand Tracking model card](https://storage.googleapis.com/mediapipe-assets/Model%20Card%20Hand%20Tracking%20%28Lite_Full%29%20with%20Fairness%20Oct%202021.pdf) 第 2 页列出 Apache License 2.0。

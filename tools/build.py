@@ -61,7 +61,6 @@ def main():
             "iniconfig",
             "pluggy",
             "pygments",
-            "pyinstaller",
             "pyinstaller-hooks-contrib",
             "psutil",
         ):
