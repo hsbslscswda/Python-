@@ -30,6 +30,9 @@ def main():
             controls.get("bent", 75.0),
             controls.get("extended", 160.0),
         )
+        engine.circle.profiles = {
+            side: (bent, extended) for side, bent, extended in controls.get("profiles", ())
+        }
         if item.get("input_suppressed", False):
             view, events = engine.view, ()
         else:

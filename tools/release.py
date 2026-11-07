@@ -9,7 +9,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.1.1"
+VERSION = "0.2.0"
 OUTPUTS = ROOT.parents[1] / "outputs"
 PORTABLE = OUTPUTS / f"镜中取月_v{VERSION}"
 
@@ -39,7 +39,7 @@ def stage():
     for name, args in (
         ("启动摄像头.cmd", "--autostart --diagnostics"),
         ("构造动作演示.cmd", "--demo"),
-        ("兼容画质.cmd", "--compat"),
+        ("兼容画质.cmd", "--compat --autostart --diagnostics"),
     ):
         (PORTABLE / name).write_bytes(
             ('@echo off\r\nstart "" "%~dp0MirrorMoon.exe" ' + args + "\r\n").encode("ascii")
@@ -93,18 +93,29 @@ def finalize():
         "model-path-smoke.json",
         "package-smoke.json",
         "missing-model-smoke.json",
-        "unicode-reproduction.json",
+        "missing-model-repeated.json",
         "extracted-package-smoke.json",
+        "ui-smoke-demo.json",
+        "ui-smoke-camera.json",
     ):
         shutil.copy2(ROOT / "local" / filename, evidence / filename)
+    for folder in ("graphics", "graphics-compat"):
+        target = evidence / folder
+        target.mkdir(exist_ok=True)
+        for filename in ("results.json", "metrics.json"):
+            shutil.copy2(ROOT / "local" / folder / filename, target / filename)
+    for filename in ("ui-guide-synthetic.png",):
+        shutil.copy2(ROOT / "local" / filename, evidence / filename)
+    for filename in ("circle-overdrive.png", "blade.png", "mirror-fold.png", "mirror-shatter.png"):
+        shutil.copy2(ROOT / "local/graphics" / filename, evidence / "graphics" / filename)
     (review / "先读我.md").write_text(
         f"""# 固定基线 v{VERSION} / {head[:7]}
 
-先读 source/docs/VALIDATION.md 的 v0.1.1 修复及范围更正，再读 source/docs/DECISIONS.md 与 GEMINI_REVIEW_RESPONSE.md。完整源码、配置、着色器、测试、依赖锁和模型来源均在 source；差异在 changes.patch。
+先读 source/docs/VALIDATION.md 的 v0.2.0 记录，再读 source/docs/DECISIONS.md 与 GEMINI_REVIEW_RESPONSE.md。完整源码、配置、着色器、测试、依赖锁和模型来源均在 source；差异在 changes.patch。原用户反馈已经证明 v0.1.1 真人体验失败，旧构造测试不能覆盖这一结论。
 
-本包没有用户摄像头照片、视频、个人关键点，也没有模型权重。evidence 中有49项测试、真实模型中文路径测试、最终中文交付路径的EXE结果。真人施法与视觉体验仍未验收；不能把模型能运行等同于动作通过。
+本包没有用户摄像头照片、视频、个人关键点，也没有模型权重。evidence 中有当前 pytest、真实模型中文路径测试、最终中文交付路径EXE检查与明确标注的构造画面。v0.2.0 真人动作与视觉体验尚未复验，不能把修复后的模拟测试当作人体通过。
 
-请审查：1. 字节缓冲加载是否保持完整性校验与生命周期；2. 错误提示和测试是否还存在工作目录/安装目录混淆；3. 基于现有交互代码，下一轮本人自测最优先的三个具体失败条件。给严重程度、文件/条件、最小复现、修正和验收方法；未运行请明示。
+请审查：1. 新的 Hands/Pose 关联、肘角滤波、按臂校准是否仍会引入身份交换或抖动/迟滞；2. 召唤手自由后，握臂进入/失去/恢复的证据和退出是否安全，包含正面透视缩短；3. 月刃/镜面在10Hz附近及遮挡重获时是否存在误触或漏触。每项给具体文件、复现和验收；未运行请明示。不要另起工程。
 """,
         "utf-8",
     )
@@ -119,8 +130,8 @@ def finalize():
     review_zip = kit / f"镜中取月_v{VERSION}_Gemini审查包.zip"
     archive_directory(review, review_zip, "MirrorMoon_Review")
     prompt = f"""这是《镜中取月》当前代码的固定基线审查包，版本 v{VERSION}，commit {head}。
-请先解压并阅读包内“先读我.md”、source/docs/VALIDATION.md 的 v0.1.1 更正，以及相关源码/测试。上一版中文安装目录打不开模型导致黑屏，Codex 已改用校验后的 model_asset_buffer，并增加最终中文交付目录验证。
-请只审查包内列出的三个问题：模型缓冲加载与生命周期；安装路径/异常提示/测试覆盖；下一轮真人自测最优先的三个具体失败条件。
+请先解压阅读“先读我.md”、source/docs/VALIDATION.md 的 v0.2.0 记录、GEMINI_REVIEW_RESPONSE.md 及相关源码/测试。上一版已有真人反馈：强度抖动、双手接近失效、握臂未成功、月刃/镜面无法实际释放；本次修复尚待真人复验。
+请只审查三个问题：Hands/Pose 关联、肘角滤波与按臂校准的身份/稳定性；召唤手自由后握臂进入退出（含透视缩短）；10Hz和遮挡重获时月刃/镜面误触漏触边界。
 每项给严重程度、文件位置、最小复现、影响、最小修正和验收方法。没有运行就明确说未运行。不要重新起工程，不把构造输入、模型连通或旧版测试当成真人动作通过。真人动作与审美由我反馈，技术实现与验证由 Codex 负责。
 """
     (kit / "复制给Gemini.txt").write_text(prompt, "utf-8")
@@ -154,13 +165,13 @@ def finalize():
     (OUTPUTS / "先读我.md").write_text(
         f"""# 请使用修复版 v{VERSION}
 
-打开「{PORTABLE.name}」中的「启动摄像头.cmd」。旧 v0.1.0 在中文安装目录打不开模型，旧包不自动更新。新版本无需把文件夹改成英文。
+双击同目录的「双击启动镜中取月.lnk」，窗口标题须为 v{VERSION}。也可打开「{PORTABLE.name}」中的「启动摄像头.cmd」。旧包不自动更新。关闭摄像头点按钮或按 C。
 
 给 Gemini：进入「{kit.name}」，上传其中唯一的ZIP，再粘贴「复制给Gemini.txt」全文。
 
 代码基线 {head}。GitHub 开发分支已同步：{pushed}。{baseline["branch_url"] or ""}
 
-中文模型目录、最终中文安装位置的摄像头管线已验证；真人施法仍待本人验收。详见「验证记录_v{VERSION}.md」。
+日志可在程序中点击「打开日志文件夹」。修复版的真人动作与视觉体验仍待本人复验。队友可从 GitHub Releases 下载 Windows ZIP： https://github.com/hsbslscswda/Python-/releases/tag/v{VERSION} 。详见「验证记录_v{VERSION}.md」。
 """,
         "utf-8",
     )

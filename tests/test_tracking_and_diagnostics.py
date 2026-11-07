@@ -91,13 +91,13 @@ def test_degenerate_world_bones_are_unknown_and_finite():
     assert all(a.angle is None for a in f.arms)
 
 
-def test_body_scale_freezes_when_projection_collapses():
+def test_side_projection_uses_bounded_reference_scale():
     extractor = FeatureExtractor()
     hands, pose = observations()
     original = extractor.extract(hands, pose, 1280, 720, 0.0, 0)
     hands, pose = observations(shoulder_pixels=80)
     collapsed = extractor.extract(hands, pose, 1280, 720, 0.03, 1)
-    assert not collapsed.valid and collapsed.scale == original.scale and collapsed.chest == original.chest
+    assert collapsed.valid and collapsed.scale >= original.scale * 0.72
 
 
 @pytest.mark.parametrize("folded,expected", [(False, Shape.OPEN), (True, Shape.FIST)])

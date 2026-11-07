@@ -7,8 +7,8 @@ import time
 from collections import deque
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, Qt, QTimer
-from PySide6.QtGui import QKeySequence, QShortcut, QSurfaceFormat
+from PySide6.QtCore import QEvent, Qt, QTimer, QUrl
+from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut, QSurfaceFormat
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -25,8 +25,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from . import __version__
 from .audio import Audio
 from .diagnostics import Recorder
+from .guide import PoseGuide
 from .pipeline import Pipeline
 from .render import GLStage, PainterStage, RenderState
 from .resources import user_dir
@@ -36,10 +38,11 @@ class Window(QMainWindow):
     def __init__(self, args):
         super().__init__()
         self.args = args
-        self.setWindowTitle("镜中取月 · 动作魔法舞台")
+        self.setWindowTitle(f"镜中取月 v{__version__} · 动作体验修订版")
         self.resize(1180, 820)
         self.setMinimumSize(960, 680)
         self.pipeline = None
+        self.stopping_preview = False
         self.data = RenderState()
         self.recorder = Recorder()
         self.data.recorder = self.recorder
@@ -56,12 +59,18 @@ class Window(QMainWindow):
         self.calibration = None
         self.settings_path = user_dir() / "calibration.json"
         self.endpoints = (75.0, 160.0)
+        self.profiles = {}
+        self.last_record_path = None
+        self.effect_notice_until = 0.0
         if self.settings_path.exists():
             try:
                 stored = json.loads(self.settings_path.read_text("utf-8"))
                 bent, extended = stored["bent"], stored["extended"]
                 if 20 <= bent < extended - 20 <= 180:
                     self.endpoints = (bent, extended)
+                for side, pair in stored.get("profiles", {}).items():
+                    if side in ("left", "right") and 20 <= pair[0] < pair[1] - 20 <= 180:
+                        self.profiles[side] = tuple(pair)
             except (ValueError, KeyError, TypeError):
                 pass
         self.audio = Audio(self)
@@ -74,7 +83,7 @@ class Window(QMainWindow):
         title = QLabel("镜中取月")
         title.setObjectName("title")
         header.addWidget(title)
-        header.addWidget(QLabel("让动作成为法术"))
+        header.addWidget(QLabel(f"v{__version__} · 让动作成为法术"))
         header.addStretch()
         self.mode = QComboBox()
         for name, value in (("星环术", "circle"), ("月刃术", "blade"), ("镜界术", "mirror")):
@@ -100,6 +109,9 @@ class Window(QMainWindow):
         self.start_button.setObjectName("primary")
         self.start_button.clicked.connect(self.start_clicked)
         source_row.addWidget(self.start_button)
+        self.stop_button = QPushButton("关闭摄像头 C")
+        self.stop_button.clicked.connect(self.stop_preview)
+        source_row.addWidget(self.stop_button)
         video_button = QPushButton("打开视频回放")
         video_button.clicked.connect(self.open_video)
         source_row.addWidget(video_button)
@@ -111,21 +123,24 @@ class Window(QMainWindow):
         self.source_label.setObjectName("sourceLabel")
         source_row.addWidget(self.source_label)
         layout.addLayout(source_row)
-        self.stage_layout = QVBoxLayout()
+        self.stage_layout = QHBoxLayout()
         self.stage_layout.setContentsMargins(0, 0, 0, 0)
         self.stage = PainterStage(self.data) if args.compat else GLStage(self.data)
         if isinstance(self.stage, GLStage):
             self.stage.failed.connect(self.fallback)
-        self.stage_layout.addWidget(self.stage)
+        self.stage_layout.addWidget(self.stage, 1)
+        self.guide = PoseGuide()
+        self.stage_layout.addWidget(self.guide)
         layout.addLayout(self.stage_layout, 1)
         self.hint = QLabel("打开摄像头预览，让双肩、双肘和双手进入画面")
         self.hint.setObjectName("hint")
         layout.addWidget(self.hint)
         self.strength = QProgressBar()
-        self.strength.setRange(0, 100)
+        self.strength.setRange(0, 150)
         self.strength.setValue(0)
-        self.strength.setTextVisible(False)
-        self.strength.setFixedHeight(5)
+        self.strength.setTextVisible(True)
+        self.strength.setFormat("施法强度 0%")
+        self.strength.setFixedHeight(22)
         layout.addWidget(self.strength)
         footer = QHBoxLayout()
         self.status = QLabel("等待开始")
@@ -135,6 +150,10 @@ class Window(QMainWindow):
         self.calibrate_button = QPushButton("20 秒校准")
         self.calibrate_button.clicked.connect(self.begin_calibration)
         footer.addWidget(self.calibrate_button)
+        self.calibration_side = QComboBox()
+        self.calibration_side.addItem("校准右臂", "right")
+        self.calibration_side.addItem("校准左臂", "left")
+        footer.addWidget(self.calibration_side)
         reset = QPushButton("重置 Esc")
         reset.clicked.connect(self.cancel)
         footer.addWidget(reset)
@@ -171,6 +190,13 @@ class Window(QMainWindow):
         self.record_button = QPushButton("记录 G0 日志")
         self.record_button.clicked.connect(self.record_clicked)
         settings.addWidget(self.record_button)
+        logs = QPushButton("打开日志文件夹")
+        logs.clicked.connect(self.open_logs)
+        settings.addWidget(logs)
+        guide_check = QCheckBox("动作示范")
+        guide_check.setChecked(True)
+        guide_check.toggled.connect(self.guide.setVisible)
+        settings.addWidget(guide_check)
         settings.addStretch()
         settings.addWidget(QLabel("Esc 收招    空格 暂停    F11 全屏"))
         layout.addLayout(settings)
@@ -190,6 +216,7 @@ class Window(QMainWindow):
             ("Escape", self.cancel),
             ("Space", self.pause_clicked),
             ("F11", self.fullscreen),
+            ("C", self.stop_preview),
         ):
             QShortcut(QKeySequence(key), self, activated=callback)
         QApplication.instance().installEventFilter(self)
@@ -225,7 +252,7 @@ class Window(QMainWindow):
         self.stage_layout.removeWidget(previous)
         previous.deleteLater()
         self.stage = PainterStage(self.data)
-        self.stage_layout.addWidget(self.stage)
+        self.stage_layout.insertWidget(0, self.stage, 1)
         self.data.renderer_info = "兼容画质 · QPainter"
         logging.warning(reason)
         self.status.setText(reason)
@@ -235,15 +262,46 @@ class Window(QMainWindow):
             self.start_pipeline(self.source.currentData(), auto=False)
 
     def start_clicked(self):
+        if self.stopping_preview:
+            return
         if self.pipeline and not self.pipeline.stop_event.is_set():
             self.paused = False
             self.pipeline.set_controls(paused=False)
             self.start_button.setText("施法中")
             self.pause_button.setText("暂停")
         else:
-            self.start_pipeline(self.source.currentData(), auto=False)
+            source = self.pipeline.source if self.pipeline else self.source.currentData()
+            self.start_pipeline(source, auto=True)
+
+    def stop_preview(self):
+        if not self.pipeline or self.stopping_preview:
+            return
+        self.stopping_preview = True
+        self.audio.stop()
+        self.data.reset_effects()
+        self.start_button.setEnabled(False)
+        self.stop_button.setEnabled(False)
+        self.status.setText("正在关闭摄像头…")
+        self.poll_preview_stop()
+
+    def poll_preview_stop(self):
+        if not self.pipeline:
+            return
+        if not self.pipeline.close(timeout=0.0):
+            QTimer.singleShot(100, self.poll_preview_stop)
+            return
+        self.pipeline = None
+        self.data.scene = None
+        self.stopping_preview = False
+        self.start_button.setEnabled(True)
+        self.stop_button.setEnabled(True)
+        self.start_button.setText("打开摄像头")
+        self.status.setText("摄像头已关闭；需要时点击打开摄像头")
+        self.hint.setText("摄像头已关闭")
 
     def start_pipeline(self, source, auto=False):
+        if self.stopping_preview:
+            return
         if self.pipeline:
             if not self.pipeline.close():
                 QMessageBox.warning(self, "设备仍在退出", self.pipeline.status)
@@ -265,6 +323,7 @@ class Window(QMainWindow):
             paused=self.paused,
             bent=self.endpoints[0],
             extended=self.endpoints[1],
+            profiles=tuple((side, *pair) for side, pair in self.profiles.items()),
         )
         self.pipeline.start()
         self.start_button.setText("开始施法" if self.paused else "施法中")
@@ -287,14 +346,23 @@ class Window(QMainWindow):
             self.recorder.close()
             self.record_button.setText("记录 G0 日志")
             self.status.setText(f"关键点日志已保存：{path}")
+            self.last_record_path = path
         elif self.args.demo:
             self.hint.setText("构造动作不是真人验证；请先使用摄像头或本机视频")
         else:
             target = user_dir() / "diagnostics" / (time.strftime("G0_%Y%m%d_%H%M%S") + ".jsonl")
             self.recorder.start(target)
+            self.last_record_path = target
             self.record_button.setText("停止记录日志")
 
+    def open_logs(self):
+        directory = user_dir() / "diagnostics"
+        directory.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(directory)))
+
     def mode_changed(self):
+        self.guide.mode = self.mode.currentData()
+        self.guide.started = time.perf_counter()
         self.data.reset_effects()
         self.audio.stop()
         self.element.setEnabled(self.mode.currentData() == "circle")
@@ -311,6 +379,8 @@ class Window(QMainWindow):
             self.pipeline.set_controls(reset_id=self.reset_id)
 
     def pause_clicked(self):
+        if not self.pipeline or self.pipeline.error or self.pipeline.stop_event.is_set():
+            return
         self.paused = not self.paused
         self.data.reset_effects()
         self.pause_button.setText("恢复" if self.paused else "暂停")
@@ -321,28 +391,40 @@ class Window(QMainWindow):
         self.showNormal() if self.isFullScreen() else self.showFullScreen()
 
     def begin_calibration(self):
-        if not self.pipeline or not self.data.scene or self.args.demo:
+        if (
+            not self.pipeline
+            or self.pipeline.error
+            or self.pipeline.stop_event.is_set()
+            or not self.data.scene
+            or self.args.demo
+        ):
             self.hint.setText("先打开真实摄像头预览，再进行校准")
             return
         self.cancel()
-        self.calibration = {"start": time.perf_counter(), "bent": [], "extended": []}
+        self.calibration = {
+            "start": time.perf_counter(),
+            "side": self.calibration_side.currentData(),
+            "bent": [],
+            "extended": [],
+        }
         self.pipeline.set_controls(paused=True)
         self.calibrate_button.setText("Esc 取消校准")
 
     def calibration_tick(self, now, new_scene):
         calibration = self.calibration
         elapsed = now - calibration["start"]
+        side_name = "左" if calibration["side"] == "left" else "右"
         instructions = [
             "自然站定，让双肩与双肘进入画面",
             "抬起左手，保持清晰可见",
             "抬起右手，保持清晰可见",
-            "右臂自然弯曲，保持舒适",
-            "右臂舒适伸直，不必锁死肘关节",
+            f"{side_name}臂自然弯曲，保持舒适",
+            f"{side_name}臂朝前舒适伸直，不必锁死肘关节",
         ]
         stage = min(4, int(elapsed / 4))
         self.hint.setText(f"校准 {max(0, 20 - int(elapsed))} 秒：{instructions[stage]}")
         if new_scene and stage >= 3:
-            arm = self.data.scene.features.arm("right")
+            arm = self.data.scene.features.arm(calibration["side"])
             if arm.angle is not None and arm.hand_valid and arm.tracked:
                 calibration["bent" if stage == 3 else "extended"].append(arm.angle)
         if elapsed >= 20:
@@ -354,13 +436,23 @@ class Window(QMainWindow):
                 )
                 enough = extended - bent >= 25.0
             if enough:
-                self.endpoints = (bent, extended)
+                self.profiles[calibration["side"]] = (bent, extended)
                 self.settings_path.write_text(
-                    json.dumps({"version": 1, "arm": "right", "bent": bent, "extended": extended}, indent=2),
+                    json.dumps(
+                        {
+                            "version": 2,
+                            "bent": self.endpoints[0],
+                            "extended": self.endpoints[1],
+                            "profiles": self.profiles,
+                        },
+                        indent=2,
+                    ),
                     "utf-8",
                 )
-                self.pipeline.set_controls(bent=bent, extended=extended)
-                self.hint.setText("校准已保存；点击开始施法。左臂暂使用同一组端点。")
+                self.pipeline.set_controls(
+                    profiles=tuple((side, *pair) for side, pair in self.profiles.items())
+                )
+                self.hint.setText(f"{side_name}臂校准已保存；点击开始施法。另一臂可单独校准。")
             else:
                 self.hint.setText("未取得足够可靠的弯伸样本，保留原校准；可调整站位后重试")
             self.calibration = None
@@ -370,6 +462,9 @@ class Window(QMainWindow):
 
     def tick(self):
         now = time.perf_counter()
+        self.guide.update()
+        if self.stopping_preview:
+            return
         new_scene = False
         if self.pipeline:
             version, scene = self.pipeline.scenes.read()
@@ -384,9 +479,30 @@ class Window(QMainWindow):
                 new_scene = True
                 self.hint.setText("预览中：调整站位后点击开始施法" if self.paused else scene.spell.hint)
                 self.strength.setValue(round(scene.spell.intensity * 100))
+                self.strength.setFormat(
+                    f"施法强度 {round(scene.spell.intensity * 100)}%"
+                    + (" · 搭臂增强" if scene.spell.intensity > 1.0 else "")
+                )
+                self.strength.setStyleSheet(
+                    "QProgressBar::chunk {background: #f4c56d;}" if scene.spell.intensity > 1.0 else ""
+                )
             events = self.pipeline.events.consume(now)
             self.data.events(events)
             self.audio.events(events)
+            labels = {
+                "slash": "月刃已释放",
+                "double": "双月连斩已释放",
+                "cross": "十字裂空已释放",
+                "shatter": "镜面已碎裂",
+                "mirror_open": "镜面已展开",
+                "overdrive": "搭臂增强已确认",
+            }
+            for event in events:
+                if event.kind in labels:
+                    self.effect_notice = labels[event.kind]
+                    self.effect_notice_until = now + 0.9
+            if now < self.effect_notice_until:
+                self.hint.setText(self.effect_notice)
             age = now - self.data.scene.frame.captured if self.data.scene else 100.0
             if self.data.scene and age < 0.4 and not self.pipeline.stop_event.is_set() and not self.paused:
                 self.audio.update(self.data.scene.spell.intensity)
@@ -406,12 +522,17 @@ class Window(QMainWindow):
                 self.hint.setText("识别未启动，不能施法。请查看下方完整错误，修复后点击重试。")
                 self.start_button.setText("重试摄像头")
                 self.source_label.setText("摄像头/识别未就绪")
+            ready = self.pipeline.error is None and not self.pipeline.stop_event.is_set()
+            self.pause_button.setEnabled(ready)
+            self.calibrate_button.setEnabled(ready)
             if self.data.scene:
                 status = f"{self.data.scene.features.reason or self.data.scene.spell.quality}    {status}"
             if self.audio.error():
                 status += "    声音不可用，画面可继续使用"
             if isinstance(self.stage, PainterStage):
                 status += "    兼容画质"
+            if self.last_record_path:
+                status += f"\n{'正在记录' if self.recorder.file else '日志已保存'}：{self.last_record_path}"
             self.status.setText(status)
             if self.calibration:
                 self.calibration_tick(now, new_scene)
@@ -495,6 +616,14 @@ class Window(QMainWindow):
         metrics = self.metrics()
         metrics["workers_closed_cleanly"] = clean
         metrics["workers_close_seconds"] = self.pipeline.close_seconds if self.pipeline else 0.0
+        metrics["worker_shutdown_seconds_after_request"] = (
+            {
+                name: max(0.0, stamp - self.pipeline.shutdown_started)
+                for name, stamp in self.pipeline.worker_shutdown.items()
+            }
+            if self.pipeline and self.pipeline.shutdown_started is not None
+            else {}
+        )
         if self.args.metrics:
             target = Path(self.args.metrics)
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -508,7 +637,7 @@ class Window(QMainWindow):
 STYLE = """
 QMainWindow, QWidget { background: #0c1925; color: #c4dbea; font-family: 'Microsoft YaHei UI'; font-size: 13px; }
 QLabel#title {font-family: 'KaiTi'; font-size: 30px; color: #e0edf4; padding-right: 12px;}
-QLabel#hint {font-size: 17px; color: #dfebf2; padding-top: 3px;}
+QLabel#hint {font-size: 20px; color: #dfebf2; padding-top: 3px;}
 QLabel#sourceLabel {color: #93bbc9;}
 QLabel#diagnostics {font-size: 12px; color: #a5beca;}
 QPushButton, QComboBox { background: #193246; border: 1px solid #314f63; padding: 7px 12px; border-radius: 4px; }

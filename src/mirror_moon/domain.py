@@ -24,6 +24,9 @@ class Arm:
     hand_valid: bool = False
     angle: float | None = None
     landmarks: tuple[Point, ...] = ()
+    pose_confidence: float = 1.0
+    elbow_visible: bool = True
+    shape_age: float = 0.0
 
     @property
     def source(self):
@@ -79,3 +82,4 @@ class SpellView:
     folded: bool = False
     hint: str = "一手握拳横在胸前，召唤星环"
     quality: str = "等待人物"
+    control_reliable: bool = True

@@ -9,6 +9,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def isolated_env():
+    env = os.environ.copy()
+    windows = Path(os.environ["SystemRoot"])
+    env["PATH"] = os.pathsep.join((str(windows / "System32"), str(windows)))
+    return env
+
+
 def test_missing_model(directory=None):
     directory = Path(directory or ROOT / "dist" / "MirrorMoon").resolve()
     model = (directory / "_internal" / "assets" / "models" / "hand_landmarker.task").resolve()
@@ -16,17 +23,26 @@ def test_missing_model(directory=None):
     backup = model.with_suffix(".task.validation-backup")
     assert not backup.exists()
     work = ROOT / "local" / "外部 启动路径"
+    work.mkdir(parents=True, exist_ok=True)
     metric = work / "missing-model.json"
+    metric.unlink(missing_ok=True)
     model.rename(backup)
     try:
         completed = subprocess.run(
             [str(directory / "MirrorMoon.exe"), "--autostart", "--quit-after", "4", "--metrics", str(metric)],
             cwd=work,
+            env=isolated_env(),
             timeout=30,
             capture_output=True,
         )
-        assert completed.returncode == 0 and metric.exists()
+        if completed.returncode != 0 or not metric.exists():
+            raise RuntimeError(
+                f"missing-model failed: returncode={completed.returncode}, stderr={completed.stderr[-1500:]}"
+            )
         value = json.loads(metric.read_text("utf-8"))
+        value["application_path_contains_chinese"] = any(ord(c) > 127 for c in str(directory))
+        value["application_path_characters"] = len(str(directory / "MirrorMoon.exe"))
+        value["system_path_only"] = True
         assert "缺少模型" in (value["pipeline_error"] or "") and value["workers_closed_cleanly"], value
         (ROOT / "local" / "missing-model-smoke.json").write_text(
             json.dumps(value, ensure_ascii=False, indent=2), "utf-8"
@@ -45,9 +61,7 @@ def main():
     work = ROOT / "local" / "外部 启动路径"
     work.mkdir(exist_ok=True, parents=True)
     results = []
-    env = os.environ.copy()
-    windows = Path(os.environ["SystemRoot"])
-    env["PATH"] = os.pathsep.join((str(windows / "System32"), str(windows)))
+    env = isolated_env()
     cases = [
         ("demo", ["--demo", "--quit-after", "5"]),
         ("camera", ["--autostart", "--quit-after", "6"]),
@@ -56,6 +70,7 @@ def main():
     ]
     for name, arguments in cases:
         metric = work / f"{name}.json"
+        metric.unlink(missing_ok=True)
         completed = subprocess.run(
             [str(exe), *arguments, "--metrics", str(metric)],
             cwd=work,

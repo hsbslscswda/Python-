@@ -1,90 +1,53 @@
 # 镜中取月
 
-## 只想打开程序？先看这里
+## 直接下载 Windows 程序
 
-**GitHub 左边的 Files 是开发源码列表，这个目录里没有可直接双击的 Windows EXE。**
+**[下载 v0.2.0 Windows 运行包](https://github.com/hsbslscswda/Python-/releases/download/v0.2.0/MirrorMoon-Windows-v0.2.0.zip)** · [发布页面](https://github.com/hsbslscswda/Python-/releases/tag/v0.2.0)
 
-运行已打包的程序，请打开本次交付的 **`镜中取月_v0.1.1`** 文件夹：
+下载 **MirrorMoon-Windows-v0.2.0.zip**，完整解压，再双击里面的 **启动摄像头.cmd**。无需配置 Python。不要下载自动生成的 “Source code” 来找 EXE，也不要只取出 MirrorMoon.exe，旁边的 `_internal` 必须保留。
 
-- **双击 `启动摄像头.cmd`**：打开程序并自动开启摄像头。
-- 或双击 **`MirrorMoon.exe`**：打开程序后点击「打开预览」，再点击「开始施法」。
+窗口标题和左上角都应显示 **v0.2.0**。这是修复候选，**新版真人动作与视觉体验尚待复验，不是课程最终验收版**。旧版已收到真实失败反馈，旧测试通过不代表好用。
 
-运行包文件名是 **`镜中取月_Windows_v0.1.1.zip`**，与名字含「源码」的 ZIP 不同。运行包已在 Codex 聊天中交付；本页不含其下载附件。请保留完整解压文件夹，`_internal` 是程序需要的组件。
+## 怎么用
 
-| GitHub 中的文件/目录 | 是什么 | 只使用程序时是否需要打开 |
-|---|---|---|
-| `src/mirror_moon` | 程序的 Python 源代码 | 不需要 |
-| `assets` | 法阵着色器、模型来源等资源 | 不需要 |
-| `docs` | 方案、验证记录、交接说明 | 想了解细节时阅读 |
-| `tests` | 自动化测试代码 | 不需要 |
-| `tools` | 开发、测试和打包工具 | 不需要 |
-| `run.py` | 开发环境入口，需先配置 Python 和依赖 | 不适合直接双击使用 |
-| `README.md` | 当前这份使用说明 | 可以阅读 |
+1. 启动后按右侧黄色火柴人示范操作，让上半身、双肩与双肘入画。左右手均可。可选择左/右臂分别做 20 秒校准。
+2. 星环术：一手在胸前或肩前松握拳；另一手开掌抬起，朝镜头弯伸。开始施法后召唤手可以自由活动；搭住施法前臂增强至110–150%；放开恢复普通。施法手握拳停法留阵，放下施法手收阵。无需固定九十度肘角。
+3. 月刃术：手收至另一侧肩前，稍停，再快速向外横挥/斜挥。“已蓄势”还没有出刃。反向挥可连斩；轨迹真的相交才判十字。
+4. 镜界术：双手开掌靠近，稍停后拉开。慢合关闭；快合到约一拳距离碎镜，不必拍掌。丢手不能触发碎镜。
+5. **关闭摄像头：点「关闭摄像头」或按 C**，窗口可保留；再点「打开摄像头」重新打开。Esc 收招，空格暂停，F11 全屏。切换系统后自然放下手稍停即可，不要求手掌留在画面内。
 
-下面的源码安装命令供开发使用；直接使用运行包无需执行这些命令。
+点「记录 G0 日志」开始记录，再点一次停止。点 **打开日志文件夹** 直接找到 JSONL，记录位置也会持续显示。日志含关键点/状态/时间，不保存摄像头图像；默认不记录，不上传。截图只有主动点击才保存。
 
-## 项目介绍
+图形不兼容时双击随包「兼容画质.cmd」。无摄像头可打开本机视频回放。构造动作演示仅展示软件与效果，不能验证真人识别。
 
-基于 MediaPipe 的 Windows 本地动作交互 AR 魔法舞台。Python 负责采集、同帧手部/人体识别、动作时序和容错，Qt/ModernGL 负责显示和 GPU 合成。运行不调用 AI API，不上传摄像头画面。
+## 这是什么项目
 
-**当前为 v0.1.1 可运行候选，不是课程最终验收版。** 修复 v0.1.0 在中文安装目录打不开模型、导致黑屏的问题：Python 读取并校验模型，再以字节缓冲交给 MediaPipe。三套系统已有实现和构造轨迹测试；正面伸臂、握臂遮挡、真实误触与视觉体验仍须本人验证。详见 `docs/VALIDATION.md` 与 `docs/HANDOFF.md`。
+Python 课程设计：MediaPipe Tasks 双手+单人 Pose、OpenCV、NumPy、PySide6、ModernGL/GLSL、QtMultimedia。Python 承担识别、时序、状态与容错。运行时不用 LLM、付费 AI API 或网络服务，不上传摄像头画面。
 
-## 最简单的运行方式
+只使用程序时，不必查看左侧 Files：`src` 是源码，`assets` 是资源，`tests` 是自动测试，`tools` 是开发工具，`docs` 是说明。它们不是可双击程序。[验证记录](docs/VALIDATION.md)区分真实摄像头连通、构造测试与待真人复验；[交接说明](docs/HANDOFF.md)给最短复测步骤。
 
-有打包文件时，解压整个 `MirrorMoon` 文件夹，双击 `MirrorMoon.exe`。不能只复制 EXE，`_internal` 与第三方许可证目录须一起保留。
-
-1. 选择摄像头 0，点击「打开预览」，让双肩、双肘、双手进入画面。
-2. 可选「20 秒校准」，按提示完成右臂弯曲与舒适伸直；样本不足不会覆盖原设置。当前左右臂共用这组端点，是待改进项。
-3. 点击「开始施法」，先放下双手约半秒，再按底部提示操作。Esc 收招，空格暂停，F11 全屏。
-4. 无摄像头可打开本机视频，界面明确标记「视频回放」。`MirrorMoon.exe --demo` 为构造动作展示，不能证明真人识别效果。显卡不兼容时使用 `MirrorMoon.exe --compat`。
-
-## 三套动作
-
-- 星环术：一手在胸前握拳召唤；另一手张开抬起，弯伸控制输出。施法手握拳/放下停止输出，胸前拳保持则法阵保留。施法中让召唤手靠近并握住施法前臂中段，进入掌前极限阵列；回胸恢复，脱离超时结束。
-- 月刃术：手收至对侧肩前停留，向外横挥/斜挥。短暂恢复后同手反向挥可连斩。实际轨迹相交且夹角符合要求才认作十字。
-- 镜界术：双手在胸前靠近开掌停留，再拉开；中点、距离和高差控制镜面。拉大保持后平移进入折镜。慢合收镜，快合碎镜；丢手本身不会触发碎镜。
-
-切换系统、Esc 或暂停恢复后，都需要一次真实的中性姿态：放下双手或放松为非开掌/非拳姿态。鼠标操作界面时暂时抑制动作更新。
-
-## 源码运行（PowerShell / Python 3.12 x64）
+## 开发者运行（Python 3.12 x64）
 
 ```powershell
 uv venv --python 3.12 .venv
 uv pip install --python .venv/Scripts/python.exe -r requirements-lock.txt
 uv pip install --python .venv/Scripts/python.exe -e . --no-deps
 .venv/Scripts/python.exe tools/prepare_models.py
-.venv/Scripts/python.exe -m mirror_moon
+.venv/Scripts/python.exe -m mirror_moon --autostart --diagnostics
 ```
 
-锁文件记录本机验证的组合；模型来自 Google 官方 version 1 地址，准备工具验证 `assets/models/manifest.json` 中的 SHA-256。应用运行期间不临时下载模型。
-
-```powershell
-# 构造动作，绝非真人识别证据
-.venv/Scripts/python.exe -m mirror_moon --demo --mode mirror
-# 真实摄像头，显示诊断；主动保存关键点/状态/时序，不保存 RGB
-.venv/Scripts/python.exe -m mirror_moon --autostart --diagnostics --record-features local/G0.jsonl
-# 本机录像回放，仍走同帧 Hands/Pose
-.venv/Scripts/python.exe -m mirror_moon --video 'D:/videos/test.mp4'
-# 关键点回放；可在 tracking 行补 expected_state 做人工标注断言
-.venv/Scripts/python.exe tools/replay.py local/G0.jsonl --output local/replay-result.json
-```
-
-界面「记录 G0 日志」也可开始/停止记录。默认关闭；关键点同样属于个人测试资料，不自动纳入审查包。日志、校准和截图在 `%LOCALAPPDATA%/MirrorMoon`，源码目录不必可写。摄像头图像只在主动截图时保存。
-
-## 验证与打包
+锁文件是本机验证的版本组合。模型下载来自 Google 官方版本地址，按清单校验 SHA-256；打包后运行不下载模型。
 
 ```powershell
 .venv/Scripts/python.exe -m pytest -q
 .venv/Scripts/ruff.exe check src tests tools
 .venv/Scripts/python.exe tools/graphics_smoke.py
 .venv/Scripts/python.exe tools/graphics_smoke.py --compat --output local/graphics-compat
+.venv/Scripts/python.exe tools/ui_smoke.py
 .venv/Scripts/python.exe tools/build.py
+.venv/Scripts/python.exe tools/package_smoke.py --app-dir '实际解压目录'
 ```
 
-图形测试使用构造数据，覆盖三套系统、冻结纹理碎镜、10 次缩放/全屏、图像方向与关闭。摄像头测试、真实动作成功率、端到端延迟与长时稳定性单列，不能由此替代。
+`--demo` 是构造动作；`--video 'D:/test.mp4'` 为录像。`--record-features local/G0.jsonl` 主动记录；`tools/replay.py` 回放，可加 `expected_state` 标注断言。`pipeline.py` 负责容量一采集、同帧推理与绑定视频快照；`features.py` 做坐标/身份/角度，`star_ring.py` 与 `interaction.py` 是纯 Python 规则，`transport.py` 独立消费瞬时事件，`render.py` 使用 Qt 当前 FBO。
 
-## 工程入口
-
-`pipeline.py` 是采集线程、同帧推理线程和容量一快照；`tracking.py` 负责 MediaPipe 边界及特征；`interaction.py` 是纯 Python 状态机；`transport.py` 保存有序瞬时事件；`render.py` 和 `assets/*.glsl`/`*.frag`/`*.vert` 是主线程渲染；`diagnostics.py` 是主动记录和回放解码。无需先拆成任务卡建议的多个同名目录。
-
-课程原文保存在 `docs/COURSE_REQUIREMENTS.md`，产品规格在 `docs/SPEC.md`。源码、真实成员分工、实验报告和不超过五分钟视频仍须按教师模板完成，不能提交虚构实验数据。
+课程原文在 [COURSE_REQUIREMENTS](docs/COURSE_REQUIREMENTS.md)，规格变更在 [SPEC](docs/SPEC.md)。最终报告、真实成员分工、教师模板和不超过五分钟真人视频仍未完成；D 摘影术是未实现扩展。完全侧身遮挡、真实物理接触与精确深度不在当前可靠承诺内。

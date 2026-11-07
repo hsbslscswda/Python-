@@ -49,6 +49,9 @@ def main():
         if window.data.scene:
             view = window.data.scene.spell
             states[view.mode].add(view.state)
+            if view.mode == "blade" and window.data.slashes and not getattr(window, "blade_captured", False):
+                window.stage_image(args.output / "blade.png")
+                window.blade_captured = True
 
     sampler = QTimer()
     sampler.timeout.connect(observe)
@@ -88,7 +91,6 @@ def main():
     QTimer.singleShot(5000, lambda: (window.showNormal(), window.resize(1180, 820)))
     QTimer.singleShot(8000, lambda: window.stage_image(args.output / "circle-overdrive.png"))
     QTimer.singleShot(17000, lambda: window.mode.setCurrentIndex(1))
-    QTimer.singleShot(18100, lambda: window.stage_image(args.output / "blade.png"))
     QTimer.singleShot(22000, lambda: window.mode.setCurrentIndex(2))
     QTimer.singleShot(26400, lambda: window.stage_image(args.output / "mirror-fold.png"))
     QTimer.singleShot(32900, lambda: window.stage_image(args.output / "mirror-shatter.png"))

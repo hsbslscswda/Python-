@@ -255,7 +255,7 @@ class GLStage(QOpenGLWidget):
             }
             for name, value in values.items():
                 self.program[name].value = value
-            live = [e for e in d.slashes if started - e.timestamp < 0.65]
+            live = [e for e in d.slashes if started - e.timestamp < 0.80]
             d.slashes = live
             paths, params = np.zeros((8, 4), "f4"), np.zeros((8, 2), "f4")
             for i, event in enumerate(live):
@@ -423,14 +423,23 @@ class PainterStage(QWidget):
             p.drawImage(0, 0, d.image)
             view = d.scene.spell
             color = QColor("#abc4ff" if d.element == "lightning" else "#b1e3f9")
-            color.setAlphaF(min(1.0, view.visibility * 0.8 * d.gain))
-            p.setPen(QPen(color, 2.0))
+            color.setAlphaF(min(1.0, view.visibility * d.gain))
+            p.setPen(QPen(color, 3.5))
             p.setBrush(QColor(0, 0, 0, 0))
             if view.mode == "circle" and view.visibility:
                 radius = min(view.radius, d.scene.features.height * 0.46)
                 for ratio in (1.0, 0.92, 0.80, 0.57):
                     r = radius * ratio
                     p.drawEllipse(QPointF(*view.center), r, r)
+                for offset in (0.0, math.pi / 3):
+                    vertices = [
+                        QPointF(
+                            view.center[0] + radius * 0.70 * math.cos(offset + i * math.tau / 3),
+                            view.center[1] + radius * 0.70 * math.sin(offset + i * math.tau / 3),
+                        )
+                        for i in range(3)
+                    ]
+                    p.drawPolygon(QPolygonF(vertices))
                 for i in range(32):
                     a = i * math.tau / 32 + started * 0.05
                     r = radius * 0.86
@@ -470,12 +479,12 @@ class PainterStage(QWidget):
                 p.restore()
             for e in d.slashes:
                 age = started - e.timestamp
-                if age < 0.65:
+                if age < 0.80:
                     c = QColor("#d1efff")
-                    c.setAlphaF(max(0.0, 1.0 - age / 0.65))
-                    p.setPen(QPen(c, 4.0 + e.strength * 3.0))
+                    c.setAlphaF(max(0.0, 1.0 - age / 0.80))
+                    p.setPen(QPen(c, 7.0 + e.strength * 5.0))
                     p.drawPolyline(QPolygonF([QPointF(*pt) for pt in e.points]))
-            d.slashes = [e for e in d.slashes if started - e.timestamp < 0.65]
+            d.slashes = [e for e in d.slashes if started - e.timestamp < 0.80]
             e = d.shatter
             if e and started - e.timestamp < 0.85:
                 if self.mesh_event != e.event_id:

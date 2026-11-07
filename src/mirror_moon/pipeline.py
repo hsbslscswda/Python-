@@ -39,6 +39,7 @@ class Controls:
     suppress_until: float = 0.0
     bent: float = 75.0
     extended: float = 160.0
+    profiles: tuple = ()
 
 
 class Pipeline:
@@ -47,6 +48,7 @@ class Pipeline:
         self.frames, self.scenes = Latest(), Latest()
         self.events = EventJournal()
         self.stop_event = StopEvent()
+        self.models_ready = StopEvent()
         self.control_lock = Lock()
         self.controls = Controls()
         self.status = "等待开始"
@@ -88,6 +90,12 @@ class Pipeline:
     def _capture(self):
         cap = None
         try:
+            # Do not race a device open/release against a model startup failure.
+            while not self.models_ready.wait(0.05):
+                if self.stop_event.is_set():
+                    return
+            if self.stop_event.is_set():
+                return
             is_camera = isinstance(self.source, int)
             cap = cv2.VideoCapture(self.source, cv2.CAP_DSHOW if is_camera else cv2.CAP_ANY)
             if not cap.isOpened() and is_camera:
@@ -134,6 +142,7 @@ class Pipeline:
         self.last_processed_controls = controls
         self.input_suppressed = False
         self.engine.circle.bent, self.engine.circle.extended = controls.bent, controls.extended
+        self.engine.circle.profiles = {side: (bent, extended) for side, bent, extended in controls.profiles}
         reset = controls.reset_id != getattr(self, "last_reset", 0)
         self.last_reset = controls.reset_id
         if reset or controls.mode != self.engine.mode or controls.paused:
@@ -168,6 +177,7 @@ class Pipeline:
 
             self.status = "正在加载本地模型"
             tracker = Tracker()
+            self.models_ready.set()
             version = 0
             while not self.stop_event.is_set():
                 next_version, frame = self.frames.read(version, 0.1)

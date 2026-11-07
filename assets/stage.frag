@@ -33,7 +33,7 @@ mat2 turn(float a) {return mat2(cos(a),sin(a),-sin(a),cos(a));}
 vec3 camera(vec2 p) {return texture(camera_tex,clamp(p/source_size,vec2(0.),vec2(1.))).rgb;}
 float sigil(vec2 p,float r,float t) {
     float d=length(p),a=atan(p.y,p.x),v=0.;
-    float thin=max(1.,shoulder*.006);
+    float thin=max(1.4,shoulder*.010);
     v+=band(d-r,thin)*.65;
     v+=band(d-r*.91,thin*.7)*.5;
     v+=band(d-r*.79,thin*.7)*.5;
@@ -44,6 +44,17 @@ float sigil(vec2 p,float r,float t) {
     v+=band(d-r*.64,thin*.55)*step(.6,cos(a*12.-t))*.4;
     v+=band(d-r*.34,thin*.6)*.2;
     v+=band(d-r,thin*5.)*.14;
+    // Two counter-facing triangles, twelve radial glyphs and moon nodes.
+    for(int i=0;i<6;i++) {
+        float b=float(i)*PI/3.+t*.10;
+        vec2 u=vec2(cos(b),sin(b))*r*.70;
+        vec2 w=vec2(cos(b+2.*PI/3.),sin(b+2.*PI/3.))*r*.70;
+        v+=band(lineDist(p,u,w),thin*.65)*.42;
+    }
+    float sector=mod(a+PI/12.,PI/6.)-PI/12.;
+    vec2 local=vec2(cos(sector),sin(sector))*d-vec2(r*.84,0.);
+    v+=band(abs(local.x)+abs(local.y)-r*.027,thin*.6)*.65;
+    v+=band(d-r*.96,thin*.6)*step(.6,cos(a*72.-t))*.8;
     return v;
 }
 void main() {
@@ -63,28 +74,31 @@ void main() {
         float central=smoothstep(r*.19,r*.42,length(q));
         float face=smoothstep(shoulder*.23,shoulder*.42,length(p-(chest-vec2(0.,shoulder*.65))));
         float channel=smoothstep(shoulder*.075,shoulder*.17,lineDist(p,chest,palm));
-        light+=silver*v*central*face*mix(.32,1.,channel)*visibility;
+        float backing=smoothstep(r*.45,r*.70,length(q))*(1.-smoothstep(r*.99,r*1.07,length(q)));
+        base*=1.-backing*visibility*.40*face;
+        light+=silver*v*central*face*mix(.55,1.,channel)*visibility*1.75;
         if(intensity>.002) {
             vec2 energy=p-palm;
             float d=length(energy)/max(shoulder,1.);
             float a=atan(energy.y,energy.x);
             float waves=pow(max(0.,sin(d*28.-time*(7.+intensity*6.))),14.);
             float plume=waves*exp(-d*2.4)*intensity;
-            plume+=band(d-.12,.025)*intensity;
+            plume+=band(d-.12,.035)*intensity*1.8;
+            plume+=band(d,.08)*intensity*.75;
             if(lightning==1) {
                 float arc=band(sin(a*8.+d*13.+floor(time*9.)),.07)*exp(-d*1.8);
                 plume=arc*intensity*.6;
             }
-            light+=silver*plume*visibility;
+            light+=silver*plume*visibility*1.45;
         }
         if(migration>.02) {
             for(int i=0;i<3;i++) {
                 float k=float(i);
                 vec2 offset=vec2(0.,(k-1.)*shoulder*.17);
-                light+=silver*sigil(turn(time*(.12+k*.03))* (q-offset),r*(.58+k*.14),time+k)*migration*.48;
+                light+=silver*sigil(turn(time*(.12+k*.03))* (q-offset),r*(.58+k*.14),time+k)*migration*.80;
             }
             float wave=fract(time*.85);
-            light+=silver*band(length(q)-r*(.1+wave*1.1),3.)*(1.-wave)*intensity*migration;
+            light+=silver*band(length(q)-r*(.1+wave*1.1),4.5)*(1.-wave)*intensity*migration*1.5;
             if(lightning==1) {
                 for(int j=0;j<12;j++) {
                     float a=float(j)*PI/6.;
@@ -114,10 +128,11 @@ void main() {
             }
             sampleq.x=-sampleq.x;
             sampleq+=normalize(q+vec2(.001))*sin(length(q)*.035-time*1.8)*2.;
-            vec3 reflected=camera(center+sampleq)*vec3(.87,.96,1.06);
-            base=mix(base,reflected,.92*visibility);
+            vec3 reflected=camera(center+sampleq)*vec3(.80,.96,1.08)+vec3(.015,.025,.06);
+            base=mix(base,reflected,visibility);
+            base+=vec3(.02,.04,.07)*pow(1.-abs(q.y)/max(1.,bounds.y),8.)*visibility;
         }
-        light+=vec3(.65,.87,1.)*(band(d,1.6)+band(d,9.)*.18)*visibility;
+        light+=vec3(.65,.87,1.)*(band(d,3.)*1.8+band(d,12.)*.28+band(d+7.,1.))*visibility;
         light+=vec3(.65,.87,1.)*band(q.x,1.4)*exp(-abs(q.y)/max(20.,radius*.7))*visibility*float(radius<shoulder*.3);
     }
     for(int i=0;i<8;i++) {
@@ -130,7 +145,7 @@ void main() {
         vec2 curve=mix(a,b,progress)+normal*sin(progress*PI)*shoulder*.18;
         float d=length(p-curve-tangent*age*shoulder*.7);
         float taper=sin(progress*PI);
-        light+=vec3(.68,.86,1.)*(band(d,2.+power*3.)+band(d,12.)*.23)*taper*max(0.,1.-age/.55);
+        light+=vec3(.68,.86,1.)*(band(d,4.+power*5.)*2.+band(d,20.)*.42)*taper*max(0.,1.-age/.80);
     }
     if(quality>0) light+=min(light,vec3(.5))*.16;
     color=vec4(base+light*effect_gain,1.);

@@ -39,6 +39,14 @@ def crossing(a: Point, b: Point, c: Point, d: Point) -> bool:
     return 0 <= t <= 1 and 0 <= s <= 1 and ang is not None and 35 <= ang <= 145
 
 
+def blade_combo(a, b, c, d):
+    if crossing(a, b, c, d):
+        return "cross"
+    u, v = (b[0] - a[0], b[1] - a[1], 0.0), (d[0] - c[0], d[1] - c[1], 0.0)
+    angle = angle3(u, (0.0, 0.0, 0.0), v)
+    return "double" if angle is not None and angle >= 150.0 else "slash"
+
+
 def smoothstep(x: float) -> float:
     x = max(0.0, min(1.0, x))
     return x * x * (3.0 - 2.0 * x)
@@ -80,3 +88,35 @@ class Hold:
 
     def clear(self):
         self.starts.clear()
+
+
+def recent_samples(history, now, window=0.16, max_age=0.35):
+    """Keep a preceding valid observation when a slow camera exceeds the nominal window."""
+    valid = [sample for sample in history if 0 <= now - sample[0] <= max_age]
+    recent = [sample for sample in valid if now - sample[0] <= window]
+    if len(recent) < 2:
+        recent = valid[-2:]
+    return recent
+
+
+def fitted_velocity(history):
+    """Least-squares velocity, in the input coordinate unit per second."""
+    if len(history) < 2:
+        return (0.0, 0.0)
+    ts = [item[0] - history[0][0] for item in history]
+    mean_t = sum(ts) / len(ts)
+    denominator = sum((t - mean_t) ** 2 for t in ts)
+    if denominator < 1e-8:
+        return (0.0, 0.0)
+    return tuple(
+        sum((t - mean_t) * item[1][axis] for t, item in zip(ts, history)) / denominator for axis in (0, 1)
+    )
+
+
+def arm_lowered(arm, frame):
+    """Visible elbow and downward wrist estimate suffice when the hand is below the image."""
+    return (
+        arm.elbow_visible
+        and arm.elbow[1] > arm.shoulder[1] + 0.16 * frame.scale
+        and arm.wrist[1] > frame.chest[1] + 0.65 * frame.scale
+    )
