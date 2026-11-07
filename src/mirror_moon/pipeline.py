@@ -166,6 +166,8 @@ class Pipeline:
                         "timestamp": event.timestamp,
                         "points": event.points,
                         "strength": event.strength,
+                        "folded": event.folded,
+                        "body_scale": event.body_scale,
                     }
                 )
         return view

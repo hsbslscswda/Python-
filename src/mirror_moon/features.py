@@ -124,9 +124,14 @@ class FeatureExtractor:
             wrist = 15 if side == "left" else 16
             hand = raw[index]
             q = confidence(wrist)
-            geometric = distance(hand[0], xy(wrist)) / scale * (0.55 + 0.45 * q) if q >= 0.25 else 0.22
             prior = self.previous.get(side)
             age = timestamp - self.last_seen.get(side, -99.0)
+            if q >= 0.35:
+                geometric = distance(hand[0], xy(wrist)) / scale * (0.55 + 0.45 * q)
+            elif prior and age < 0.35:
+                geometric = distance(hand[0], prior[0]) / scale + 0.15
+            else:
+                return 1.30  # No localization evidence must cost MORE than leaving it unmatched.
             continuity = 0.0
             if prior and age < 0.45:
                 delta = distance(hand[0], prior[0]) / scale
@@ -150,28 +155,32 @@ class FeatureExtractor:
         )
         if duplicate:
             left_id = right_id = None
-        elif ambiguous and all(side in self.previous for side in ("left", "right")):
-            continuity = sorted(
-                (
-                    (
-                        sum(
-                            distance(raw[index][0], self.previous[side][0]) / scale
-                            for side, index in zip(("left", "right"), pair)
-                            if index is not None
-                        ),
-                        pair,
-                    )
-                    for pair in mappings
-                    if all(index is not None for index in pair)
-                ),
-                key=lambda row: row[0],
-            )
-            if continuity and (len(continuity) == 1 or continuity[1][0] - continuity[0][0] > 0.06):
-                left_id, right_id = continuity[0][1]
-            else:
-                left_id = right_id = None
         elif ambiguous:
-            left_id = right_id = None
+            plausible = [row[1:] for row in ranked if row[0] <= ranked[0][0] + 0.035]
+            kept = [None, None]
+            for side_id, side in enumerate(("left", "right")):
+                alternatives = {pair[side_id] for pair in plausible}
+                if len(alternatives) == 1:
+                    kept[side_id] = next(iter(alternatives))
+            # Preserve individually identifiable hands, including the one-hand case.
+            # Never reuse an index or rescue a truly coincident identity by arbitrary side.
+            for index in candidates:
+                if index in kept:
+                    continue
+                distances = [
+                    distance(raw[index][0], self.previous[side][0]) / scale
+                    if side in self.previous and timestamp - self.last_seen.get(side, -99.0) < 0.35
+                    else 99.0
+                    for side in ("left", "right")
+                ]
+                winner = 0 if distances[0] < distances[1] else 1
+                if (
+                    distances[winner] < 0.40
+                    and distances[1 - winner] - distances[winner] > 0.10
+                    and kept[winner] is None
+                ):
+                    kept[winner] = index
+            left_id, right_id = kept
 
         result = []
         for side, ids, index in (("left", (11, 13, 15), left_id), ("right", (12, 14, 16), right_id)):
@@ -202,7 +211,12 @@ class FeatureExtractor:
             if not hand and shape_age <= 0.25:
                 shape = old_shape
             image_wrist = hand[0] if hand else xy(wrist)
-            tracked = bool(hand) or reliable(wrist, 0.25)
+            tracked = bool(hand) or (reliable(wrist, 0.50) and reliable(elbow, 0.40))
+            other = right_id if side == "left" else left_id
+            if not hand and other is not None and distance(xy(wrist), raw[other][0]) / scale < 0.12:
+                own_prior = self.previous.get(side)
+                if not own_prior or shape_age > 0.35 or distance(xy(wrist), own_prior[0]) / scale > 0.40:
+                    tracked = False  # An unseen arm cannot be established by the other hand's wrist.
             angle = None
             q = min(confidence(i) for i in ids)
             if world and q >= 0.28:
@@ -229,6 +243,13 @@ class FeatureExtractor:
                     q,
                     reliable(elbow, 0.25),
                     shape_age,
+                    confidence(wrist),
+                    xy(wrist),
                 )
             )
-        return Features(timestamp, frame_id, width, height, chest, scale, tuple(result), valid, reason)
+        yaw = None
+        if world and reliable(11, 0.60) and reliable(12, 0.60):
+            v = tuple(getattr(world[12], axis) - getattr(world[11], axis) for axis in ("x", "y", "z"))
+            if all(math.isfinite(x) for x in v) and 0.15 < math.dist(v, (0.0, 0.0, 0.0)) < 0.8:
+                yaw = max(-1.1, min(1.1, math.atan2(v[2], abs(v[0]))))
+        return Features(timestamp, frame_id, width, height, chest, scale, tuple(result), valid, reason, yaw)

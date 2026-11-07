@@ -5,6 +5,7 @@ from dataclasses import asdict
 from pathlib import Path
 from threading import Lock
 
+from . import __version__
 from .domain import Arm, Features, Shape
 
 
@@ -23,7 +24,12 @@ class Recorder:
             self.file = self.path.open("w", encoding="utf-8")
             self.file.write(
                 json.dumps(
-                    {"type": "header", "schema": 1, "privacy": "landmarks and timings only; no RGB or audio"}
+                    {
+                        "type": "header",
+                        "schema": 1,
+                        "app_version": __version__,
+                        "privacy": "landmarks and timings only; no RGB or audio",
+                    }
                 )
                 + "\n"
             )
@@ -64,8 +70,11 @@ def decode_features(value):
     arms = []
     for a in value["arms"]:
         a = dict(a)
+        a.setdefault("wrist_confidence", a.get("pose_confidence", 0.0))
         for key in ("shoulder", "elbow", "wrist"):
             a[key] = tuple(a[key])
+        if a.get("pose_wrist") is not None:
+            a["pose_wrist"] = tuple(a["pose_wrist"])
         a["landmarks"] = tuple(tuple(p) for p in a["landmarks"])
         a["shape"] = Shape(a["shape"])
         arms.append(Arm(**a))

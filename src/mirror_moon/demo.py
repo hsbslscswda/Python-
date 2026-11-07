@@ -63,11 +63,11 @@ def sample(elapsed, now, frame_id, mode="circle"):
         if 0.8 <= phase < 5.0:
             d = 0.4 + 1.4 * min(1.0, (phase - 0.8) / 0.6)
             shift = 110.0 * min(1.0, max(0.0, (phase - 3.2) / 0.8))
-        elif 5.0 <= phase < 7.3:
+        elif 5.0 <= phase < 7.8:
             d = max(0.25, 1.8 - (phase - 5.0) * 0.7)
             shift = 110.0
-        elif 8.6 <= phase < 10.5:
-            d = 0.4 + 1.4 * min(1.0, (phase - 8.6) / 0.6)
+        elif 9.0 <= phase < 10.5:
+            d = 0.4 + 1.4 * min(1.0, (phase - 9.0) / 0.6)
         elif phase >= 10.5:
             d = max(0.25, 1.8 - (phase - 10.5) * 10.0)
         arms = tuple(
@@ -76,8 +76,8 @@ def sample(elapsed, now, frame_id, mode="circle"):
             )
             for i, a in enumerate(arms)
         )
-    if mode == "mirror" and 7.8 < elapsed % 12.0 < 8.1:
-        arms = tuple(replace(a, shape=Shape.OTHER) for a in arms)
+    if mode == "mirror" and 7.8 < elapsed % 12.0 < 8.6:
+        arms = tuple(replace(a, wrist=(a.wrist[0], 600.0), shape=Shape.OTHER) for a in arms)
     if elapsed % (16.0 if mode == "circle" else 4.0 if mode == "blade" else 12.0) < 0.45:
         arms = tuple(replace(a, wrist=(a.wrist[0], 600.0), shape=Shape.OTHER) for a in arms)
     # Asymmetric chart and a silhouette make orientation, channel and aspect errors visible.

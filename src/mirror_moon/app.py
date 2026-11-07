@@ -1,7 +1,6 @@
 import argparse
 import json
 import logging
-import statistics
 import sys
 import time
 from collections import deque
@@ -27,6 +26,7 @@ from PySide6.QtWidgets import (
 
 from . import __version__
 from .audio import Audio
+from .control import fit_calibration, valid_endpoints
 from .diagnostics import Recorder
 from .guide import PoseGuide
 from .pipeline import Pipeline
@@ -66,10 +66,10 @@ class Window(QMainWindow):
             try:
                 stored = json.loads(self.settings_path.read_text("utf-8"))
                 bent, extended = stored["bent"], stored["extended"]
-                if 20 <= bent < extended - 20 <= 180:
+                if valid_endpoints(bent, extended):
                     self.endpoints = (bent, extended)
                 for side, pair in stored.get("profiles", {}).items():
-                    if side in ("left", "right") and 20 <= pair[0] < pair[1] - 20 <= 180:
+                    if side in ("left", "right") and valid_endpoints(*pair):
                         self.profiles[side] = tuple(pair)
             except (ValueError, KeyError, TypeError):
                 pass
@@ -153,6 +153,10 @@ class Window(QMainWindow):
         self.calibration_side = QComboBox()
         self.calibration_side.addItem("校准右臂", "right")
         self.calibration_side.addItem("校准左臂", "left")
+        for i, side in enumerate(("right", "left")):
+            self.calibration_side.setItemText(
+                i, ("右臂" if side == "right" else "左臂") + ("已校准" if side in self.profiles else "未校准")
+            )
         footer.addWidget(self.calibration_side)
         reset = QPushButton("重置 Esc")
         reset.clicked.connect(self.cancel)
@@ -428,15 +432,13 @@ class Window(QMainWindow):
             if arm.angle is not None and arm.hand_valid and arm.tracked:
                 calibration["bent" if stage == 3 else "extended"].append(arm.angle)
         if elapsed >= 20:
-            enough = min(len(calibration["bent"]), len(calibration["extended"])) >= 12
-            if enough:
-                bent, extended = (
-                    statistics.median(calibration["bent"]),
-                    statistics.median(calibration["extended"]),
-                )
-                enough = extended - bent >= 25.0
-            if enough:
+            endpoints = fit_calibration(calibration["bent"], calibration["extended"])
+            if endpoints:
+                bent, extended = endpoints
                 self.profiles[calibration["side"]] = (bent, extended)
+                self.calibration_side.setItemText(
+                    self.calibration_side.findData(calibration["side"]), f"{side_name}臂已校准"
+                )
                 self.settings_path.write_text(
                     json.dumps(
                         {
@@ -635,22 +637,112 @@ class Window(QMainWindow):
 
 
 STYLE = """
-QMainWindow, QWidget { background: #0c1925; color: #c4dbea; font-family: 'Microsoft YaHei UI'; font-size: 13px; }
-QLabel#title {font-family: 'KaiTi'; font-size: 30px; color: #e0edf4; padding-right: 12px;}
-QLabel#hint {font-size: 20px; color: #dfebf2; padding-top: 3px;}
-QLabel#sourceLabel {color: #93bbc9;}
-QLabel#diagnostics {font-size: 12px; color: #a5beca;}
-QPushButton, QComboBox { background: #193246; border: 1px solid #314f63; padding: 7px 12px; border-radius: 4px; }
-QPushButton:hover, QComboBox:hover {background: #25495f; border-color: #91b6c7;}
-QPushButton:focus, QComboBox:focus {border: 1px solid #d8c393;}
-QPushButton#primary {background: #a9ccd9; color: #112331; border: 1px solid #d5e9ed;}
-QPushButton:disabled, QComboBox:disabled {color:#65808e;}
-QComboBox QAbstractItemView {background: #193246; selection-background-color:#315b72;}
-QProgressBar {background: #20394b; border: 0;}
-QProgressBar::chunk {background: #b3ddec;}
-QSlider::groove:horizontal {height: 3px; background:#314e62;}
-QSlider::handle:horizontal {width:12px; margin:-5px 0; background:#bbdce8; border-radius:6px;}
-QCheckBox {spacing: 6px;}
+QMainWindow, QWidget {
+    background: #070e17;
+    color: #e2f1ff;
+    font-family: 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
+    font-size: 13px;
+}
+QLabel#title {
+    font-family: 'STXingkai', 'KaiTi', 'Microsoft YaHei UI';
+    font-size: 32px;
+    font-weight: bold;
+    color: #f0f9ff;
+    padding-right: 14px;
+}
+QLabel#hint {
+    background: #0f2133;
+    border: 1px solid #1e4263;
+    border-left: 4px solid #38bdf8;
+    border-radius: 6px;
+    font-size: 19px;
+    font-weight: 600;
+    color: #f8fafc;
+    padding: 8px 14px;
+}
+QLabel#sourceLabel {
+    background: #0d1d2c;
+    border: 1px solid #1e3a52;
+    border-radius: 12px;
+    color: #7dd3fc;
+    padding: 4px 12px;
+    font-size: 12px;
+}
+QLabel#diagnostics {
+    background: #09131d;
+    border: 1px solid #193046;
+    border-radius: 6px;
+    font-family: 'Consolas', 'Microsoft YaHei UI';
+    font-size: 12px;
+    color: #93c5fd;
+    padding: 6px 10px;
+}
+QPushButton, QComboBox {
+    background: #112638;
+    border: 1px solid #264a68;
+    color: #e0f2fe;
+    padding: 7px 14px;
+    border-radius: 6px;
+    font-weight: 500;
+}
+QPushButton:hover, QComboBox:hover {
+    background: #1a3a54;
+    border-color: #38bdf8;
+}
+QPushButton:pressed {
+    background: #0d1e2d;
+}
+QPushButton#primary {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284c7, stop:1 #38bdf8);
+    color: #041019;
+    font-weight: bold;
+    border: 1px solid #bae6fd;
+}
+QPushButton#primary:hover {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0369a1, stop:1 #7dd3fc);
+}
+QPushButton:disabled, QComboBox:disabled {
+    background: #0b1622;
+    border-color: #162a3d;
+    color: #476278;
+}
+QComboBox QAbstractItemView {
+    background: #0f2233;
+    border: 1px solid #38bdf8;
+    selection-background-color: #0284c7;
+}
+QProgressBar {
+    background: #0c1a28;
+    border: 1px solid #1e3a52;
+    border-radius: 7px;
+    text-align: center;
+    font-weight: bold;
+    color: #ffffff;
+}
+QProgressBar::chunk {
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #0284c7, stop:0.65 #38bdf8, stop:1 #a5f3fc);
+    border-radius: 6px;
+}
+QSlider::groove:horizontal {
+    height: 5px;
+    background: #162c40;
+    border-radius: 2px;
+}
+QSlider::sub-page:horizontal {
+    background: #38bdf8;
+    border-radius: 2px;
+}
+QSlider::handle:horizontal {
+    width: 14px;
+    margin: -5px 0;
+    background: #e0f2fe;
+    border: 2px solid #0284c7;
+    border-radius: 7px;
+}
+QCheckBox {
+    spacing: 6px;
+    color: #cbd5e1;
+}
 """
 
 

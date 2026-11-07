@@ -84,7 +84,7 @@ def test_return_to_chest_restores_cast_and_migration():
 def test_releasing_support_restores_normal_cast_with_free_support():
     engine = overdrive()
     states, _ = run(engine, 1.025, 2.2, support=(1000.0, 650.0))
-    assert states[0].state == "RETURN"
+    assert any(s.state == "RETURN" for s in states)
     assert states[-1].state == "CAST"
     assert 0 < states[-1].intensity <= 1.0
 
@@ -179,6 +179,9 @@ def test_slow_mirror_close_does_not_shatter():
     events = []
     for i in range(1, 101):
         view, e = engine.update(mirror_frame(0.75 + i * 0.025, 1.6 - i * 0.014))
+        events.extend(e)
+    for i in range(1, 17):
+        view, e = engine.update(mirror_frame(3.25 + i * 0.025, 0.2))
         events.extend(e)
     assert all(e.kind != "shatter" for e in events)
     assert view.state in ("CLOSING", "IDLE")

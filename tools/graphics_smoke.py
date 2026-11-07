@@ -44,8 +44,28 @@ def main():
     window.show()
     states = defaultdict(set)
     checks = []
+    gaps = []
+    instrumented = set()
 
     def observe():
+        pipeline = window.pipeline
+        if pipeline is not None and id(pipeline) not in instrumented:
+            instrumented.add(id(pipeline))
+            original = pipeline.engine.update
+            last = [None]
+
+            def tracked_update(features, *args, **kwargs):
+                if last[0] is not None and features.timestamp - last[0] > 0.35:
+                    gaps.append(
+                        {
+                            "gap_ms": round((features.timestamp - last[0]) * 1000, 2),
+                            "mode": pipeline.engine.mode,
+                        }
+                    )
+                last[0] = features.timestamp
+                return original(features, *args, **kwargs)
+
+            pipeline.engine.update = tracked_update
         if window.data.scene:
             view = window.data.scene.spell
             states[view.mode].add(view.state)
@@ -88,12 +108,23 @@ def main():
 
     for i in range(10):
         QTimer.singleShot(500 + i * 400, lambda i=i: resize(i))
-    QTimer.singleShot(5000, lambda: (window.showNormal(), window.resize(1180, 820)))
-    QTimer.singleShot(8000, lambda: window.stage_image(args.output / "circle-overdrive.png"))
-    QTimer.singleShot(17000, lambda: window.mode.setCurrentIndex(1))
-    QTimer.singleShot(22000, lambda: window.mode.setCurrentIndex(2))
-    QTimer.singleShot(26400, lambda: window.stage_image(args.output / "mirror-fold.png"))
-    QTimer.singleShot(32900, lambda: window.stage_image(args.output / "mirror-shatter.png"))
+
+    def fresh_motion_phase():
+        window.showNormal()
+        window.resize(1180, 820)
+        # Resize may legitimately stall input and activate the loss guard.
+        # Test gestures after an explicit fresh neutral, not by weakening that guard.
+        window.start_pipeline(0, auto=True)
+
+    QTimer.singleShot(6000, fresh_motion_phase)
+    QTimer.singleShot(14000, lambda: window.stage_image(args.output / "circle-overdrive.png"))
+    QTimer.singleShot(14700, lambda: window.element.setCurrentIndex(1))
+    QTimer.singleShot(15200, lambda: window.stage_image(args.output / "circle-lightning.png"))
+    QTimer.singleShot(15500, lambda: window.element.setCurrentIndex(0))
+    QTimer.singleShot(23000, lambda: window.mode.setCurrentIndex(1))
+    QTimer.singleShot(28000, lambda: window.mode.setCurrentIndex(2))
+    QTimer.singleShot(32400, lambda: window.stage_image(args.output / "mirror-fold.png"))
+    QTimer.singleShot(38900, lambda: window.stage_image(args.output / "mirror-shatter.png"))
 
     def finish():
         sampler.stop()
@@ -106,10 +137,11 @@ def main():
             "workers_closed_cleanly": window.pipeline.closed_cleanly,
             "workers_close_seconds": window.pipeline.close_seconds,
             "renderer": window.data.renderer_info,
+            "input_gaps_exceeding_safety_limit": gaps,
         }
         (args.output / "results.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), "utf-8")
 
-    QTimer.singleShot(35000, finish)
+    QTimer.singleShot(41000, finish)
     result = app.exec()
     report = json.loads((args.output / "results.json").read_text("utf-8"))
     assert report["workers_closed_cleanly"]

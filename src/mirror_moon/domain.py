@@ -27,6 +27,8 @@ class Arm:
     pose_confidence: float = 1.0
     elbow_visible: bool = True
     shape_age: float = 0.0
+    wrist_confidence: float = 1.0
+    pose_wrist: Point | None = None
 
     @property
     def source(self):
@@ -50,6 +52,7 @@ class Features:
     arms: tuple[Arm, Arm]
     valid: bool = True
     reason: str = ""
+    body_yaw: float | None = None
 
     def arm(self, side: str) -> Arm:
         return self.arms[0 if side == "left" else 1]
@@ -65,6 +68,8 @@ class Event:
     strength: float = 0.0
     seed: int = 0
     image: object = field(default=None, repr=False, compare=False)
+    folded: bool = False
+    body_scale: float = 1.0
 
 
 @dataclass(frozen=True)

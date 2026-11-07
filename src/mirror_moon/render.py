@@ -4,12 +4,13 @@ from collections import deque
 from dataclasses import replace
 
 import numpy as np
-from PySide6.QtCore import QPointF, QRectF, Signal
+from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QImage, QPainter, QPainterPath, QPen, QPolygonF
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtWidgets import QWidget
 
 from .geometry import OneEuro
+from .mirror_texture import mirror_texture
 from .resources import root
 
 
@@ -41,8 +42,8 @@ def shard_mesh(event, size):
                 velocity = centroid * 0.9 + rng.normal(0.0, 40.0, 2)
                 for p in local:
                     world = np.asarray(center) + rotation @ p
-                    sample = np.asarray(center) + np.array([-p[0], p[1]])
-                    out.append((*world, *(sample / size), *velocity))
+                    sample = p / np.array((radius * 2, radius * 1.32)) + 0.5
+                    out.append((*world, *sample, *velocity))
     return np.asarray(out, dtype="f4")
 
 
@@ -72,10 +73,15 @@ class RenderState:
         x, y = scene.spell.center
         radius = scene.spell.radius
         t = scene.features.timestamp
-        view = replace(
-            scene.spell,
-            center=(self.anchor_filters[0](x, t), self.anchor_filters[1](y, t)),
-            radius=self.anchor_filters[2](radius, t),
+        # Mirror already has one geometry smoother in its state machine.
+        view = (
+            scene.spell
+            if scene.spell.mode == "mirror"
+            else replace(
+                scene.spell,
+                center=(self.anchor_filters[0](x, t), self.anchor_filters[1](y, t)),
+                radius=self.anchor_filters[2](radius, t),
+            )
         )
         self.scene, self.image = replace(scene, spell=view), qimage(scene.frame.rgb)
 
@@ -92,7 +98,11 @@ class RenderState:
                 self.slashes.append(e)
                 self.slashes = self.slashes[-8:]
             elif e.kind == "shatter" and e.image is not None:
-                self.shatter = e
+                center, (radius, angle) = e.points[:2]
+                self.shatter = replace(
+                    e,
+                    image=mirror_texture(e.image, center, radius, angle, e.folded, e.body_scale, e.timestamp),
+                )
 
     def record(self, started):
         now = time.perf_counter()
@@ -252,6 +262,8 @@ class GLStage(QOpenGLWidget):
                 "folded": int(spell.folded),
                 "effect_gain": d.gain,
                 "quality": d.quality,
+                "body_yaw": f.body_yaw or 0.0,
+                "mirror_time": f.timestamp % 4096,
             }
             for name, value in values.items():
                 self.program[name].value = value
@@ -395,6 +407,11 @@ def draw_debug(painter, data, width, height):
     source_transform(painter, data, width, height)
     painter.setPen(QPen(QColor("#d9c69d"), 2))
     for arm in data.scene.features.arms:
+        painter.setPen(
+            QPen(QColor("#f2cd65"), 2)
+            if arm.hand_valid
+            else QPen(QColor("#aa9971"), 1.5, Qt.PenStyle.DashLine)
+        )
         if arm.tracked:
             painter.drawLine(QPointF(*arm.shoulder), QPointF(*arm.elbow))
             painter.drawLine(QPointF(*arm.elbow), QPointF(*arm.wrist))
@@ -410,6 +427,7 @@ class PainterStage(QWidget):
         self.setMinimumSize(640, 360)
         self.mesh_event = None
         self.mesh = None
+        self.mirror_patch_key = None
 
     def paintEvent(self, event):
         started = time.perf_counter()
@@ -460,22 +478,20 @@ class PainterStage(QWidget):
                 p.rotate(math.degrees(view.mirror_angle))
                 p.setOpacity(view.visibility)
                 rect = QRectF(-view.radius, -view.radius * 0.66, view.radius * 2, view.radius * 1.32)
-                crop = QRectF(
-                    view.center[0] - view.radius,
-                    view.center[1] - view.radius * 0.66,
-                    view.radius * 2,
-                    view.radius * 1.32,
-                )
-                p.save()
-                p.scale(-1, 1)
-                p.drawImage(rect, d.image, crop)
-                p.restore()
+                key = (d.scene.features.frame_id, view.center, view.radius, view.mirror_angle, view.folded)
+                if self.mirror_patch_key != key:
+                    self.mirror_patch = mirror_texture(
+                        d.scene.frame.rgb,
+                        view.center,
+                        view.radius,
+                        view.mirror_angle,
+                        view.folded,
+                        d.scene.features.scale,
+                        d.scene.features.timestamp,
+                    )
+                    self.mirror_patch_key = key
+                p.drawImage(rect, qimage(self.mirror_patch))
                 p.drawRect(rect)
-                if view.folded:
-                    for i in range(3):
-                        p.rotate(60)
-                        p.setOpacity(view.visibility * 0.22)
-                        p.drawImage(rect, d.image, crop)
                 p.restore()
             for e in d.slashes:
                 age = started - e.timestamp

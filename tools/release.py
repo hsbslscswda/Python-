@@ -9,7 +9,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 OUTPUTS = ROOT.parents[1] / "outputs"
 PORTABLE = OUTPUTS / f"镜中取月_v{VERSION}"
 
@@ -60,7 +60,7 @@ def finalize():
     baseline = {
         "version": VERSION,
         "commit": head,
-        "base_commit": git("rev-parse", "79cddf2"),
+        "base_commit": git("rev-parse", "ac1e4ba"),
         "branch": "codex/mirror-moon",
         "repository": git("remote", "get-url", "origin"),
         "pushed": pushed,
@@ -82,7 +82,7 @@ def finalize():
         shutil.copy2(ROOT / filename, target)
     (review / "BASELINE.json").write_text(json.dumps(baseline, ensure_ascii=False, indent=2), "utf-8")
     (review / "changes.patch").write_bytes(
-        subprocess.check_output(["git", "diff", "79cddf2", head, "--"], cwd=ROOT)
+        subprocess.check_output(["git", "diff", "ac1e4ba", head, "--"], cwd=ROOT)
     )
     evidence = review / "evidence"
     evidence.mkdir(exist_ok=True)
@@ -94,6 +94,9 @@ def finalize():
         "package-smoke.json",
         "missing-model-smoke.json",
         "missing-model-repeated.json",
+        "control-bench.json",
+        "review-before.log",
+        "gemini-candidate-origin.json",
         "extracted-package-smoke.json",
         "ui-smoke-demo.json",
         "ui-smoke-camera.json",
@@ -106,16 +109,22 @@ def finalize():
             shutil.copy2(ROOT / "local" / folder / filename, target / filename)
     for filename in ("ui-guide-synthetic.png",):
         shutil.copy2(ROOT / "local" / filename, evidence / filename)
-    for filename in ("circle-overdrive.png", "blade.png", "mirror-fold.png", "mirror-shatter.png"):
+    for filename in (
+        "circle-overdrive.png",
+        "circle-lightning.png",
+        "blade.png",
+        "mirror-fold.png",
+        "mirror-shatter.png",
+    ):
         shutil.copy2(ROOT / "local/graphics" / filename, evidence / "graphics" / filename)
     (review / "先读我.md").write_text(
         f"""# 固定基线 v{VERSION} / {head[:7]}
 
-先读 source/docs/VALIDATION.md 的 v0.2.0 记录，再读 source/docs/DECISIONS.md 与 GEMINI_REVIEW_RESPONSE.md。完整源码、配置、着色器、测试、依赖锁和模型来源均在 source；差异在 changes.patch。原用户反馈已经证明 v0.1.1 真人体验失败，旧构造测试不能覆盖这一结论。
+先读 source/docs/VALIDATION.md 的 v0.3.0 记录，再读 source/docs/DECISIONS.md 与 GEMINI_REVIEW_RESPONSE.md。完整源码、配置、着色器、测试、依赖锁和模型来源均在 source；差异在 changes.patch。原用户反馈已经证明 v0.1.1 真人体验失败，旧构造测试不能覆盖这一结论。
 
-本包没有用户摄像头照片、视频、个人关键点，也没有模型权重。evidence 中有当前 pytest、真实模型中文路径测试、最终中文交付路径EXE检查与明确标注的构造画面。v0.2.0 真人动作与视觉体验尚未复验，不能把修复后的模拟测试当作人体通过。
+本包没有用户摄像头照片、视频、个人关键点，也没有模型权重。evidence 中有当前 pytest、真实模型中文路径测试、最终中文交付路径EXE检查与明确标注的构造画面。v0.3.0 真人动作与视觉体验尚未复验，不能把修复后的模拟测试当作人体通过。
 
-请审查：1. 新的 Hands/Pose 关联、肘角滤波、按臂校准是否仍会引入身份交换或抖动/迟滞；2. 召唤手自由后，握臂进入/失去/恢复的证据和退出是否安全，包含正面透视缩短；3. 月刃/镜面在10Hz附近及遮挡重获时是否存在误触或漏触。每项给具体文件、复现和验收；未运行请明示。不要另起工程。
+只审三个问题：1. 单手/弱Pose关联及0.20秒Pose衔接是否会错配或误斩；2. 慢搭臂、提前迁移、有限遮挡宽限和个人校准是否存在无限增强/控制迟滞；3. 极近保持收镜、连续旋转、可见快合/丢手/重获与冻结折镜纹理的正确性。详见GEMINI_REVIEW_RESPONSE.md末尾。每项给具体复现与验收，未运行请明示，不另起工程。
 """,
         "utf-8",
     )
@@ -130,8 +139,8 @@ def finalize():
     review_zip = kit / f"镜中取月_v{VERSION}_Gemini审查包.zip"
     archive_directory(review, review_zip, "MirrorMoon_Review")
     prompt = f"""这是《镜中取月》当前代码的固定基线审查包，版本 v{VERSION}，commit {head}。
-请先解压阅读“先读我.md”、source/docs/VALIDATION.md 的 v0.2.0 记录、GEMINI_REVIEW_RESPONSE.md 及相关源码/测试。上一版已有真人反馈：强度抖动、双手接近失效、握臂未成功、月刃/镜面无法实际释放；本次修复尚待真人复验。
-请只审查三个问题：Hands/Pose 关联、肘角滤波与按臂校准的身份/稳定性；召唤手自由后握臂进入退出（含透视缩短）；10Hz和遮挡重获时月刃/镜面误触漏触边界。
+请先解压阅读“先读我.md”、source/docs/VALIDATION.md 的 v0.3.0 记录、GEMINI_REVIEW_RESPONSE.md 及相关源码/测试。上一版约四分钟日志显示：月刃没有出刃、五次增强均短暂、镜面展开十三次但无碎镜。本次六项构造复现先失败再修复，仍待真人复验。
+请只审查三个问题：单手/弱Pose关联与短时Pose衔接是否误斩；慢搭臂、有限遮挡与个人校准是否安全且响应合理；镜面收缩/连续旋转/可见快合/丢手重获及冻结折镜纹理是否正确。详见审查回应末尾的三个问题。不要再次把屏幕位移/掌宽当深度，或建议丢手自动碎镜。
 每项给严重程度、文件位置、最小复现、影响、最小修正和验收方法。没有运行就明确说未运行。不要重新起工程，不把构造输入、模型连通或旧版测试当成真人动作通过。真人动作与审美由我反馈，技术实现与验证由 Codex 负责。
 """
     (kit / "复制给Gemini.txt").write_text(prompt, "utf-8")

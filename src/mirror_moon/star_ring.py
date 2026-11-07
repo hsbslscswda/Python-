@@ -106,17 +106,17 @@ class Circle:
             d, along = segment_distance(support.wrist, caster.elbow, caster.wrist)
             d /= s
             relative = ((support.wrist[0] - f.chest[0]) / s, (support.wrist[1] - f.chest[1]) / s)
-            reference = next((row for row in reversed(self.distances) if 0.10 <= t - row[0] <= 0.5), None)
-            path_ref = next((row for row in reversed(self.support_path) if 0.15 <= t - row[0] <= 0.65), None)
+            reference = next((row for row in self.distances if 0.15 <= t - row[0] <= 1.20), None)
+            path_ref = next((row for row in self.support_path if 0.15 <= t - row[0] <= 1.20), None)
             moving = path_ref is not None and distance(relative, path_ref[1]) > 0.075
-            approach = reference is not None and (reference[1] - d) / max(0.01, t - reference[0]) > 0.10
+            approach = reference is not None and reference[1] - d > 0.03
             if support.tracked and f.valid:
                 if moving and approach and t - self.last_support_hand < 0.5:
-                    self.approach_until = t + 0.60
+                    self.approach_until = t + 0.85
                 self.distances.append((t, d))
                 self.support_path.append((t, relative))
             foreshortened = distance(caster.elbow, caster.wrist) / s < 0.25
-            along_ok = 0.05 <= along <= 1.08 or (
+            along_ok = -0.05 <= along <= 1.22 or (
                 foreshortened and distance(support.wrist, caster.elbow) / s < self.cfg.grip_enter
             )
             near = (
@@ -138,10 +138,11 @@ class Circle:
                     self.transition("CAST", t)
             elif self.state == "OVERDRIVE":
                 support_lost = self.hold.ready("support_lost", not support.tracked, t, 0.3)
-                if (
-                    support.tracked
-                    and (d > self.cfg.grip_exit or (not foreshortened and not -0.05 <= along <= 1.18))
-                ) or (support_lost):
+                outside = support.tracked and (
+                    d > self.cfg.grip_exit or (not foreshortened and not -0.15 <= along <= 1.35)
+                )
+                detached = self.hold.ready("detach", outside, t, 0.15)
+                if detached or support_lost:
                     self.transition("RETURN", t)
             elif self.state == "RETURN" and t - self.entered >= 0.25:
                 self.transition("CAST", t)
@@ -154,15 +155,16 @@ class Circle:
                 normal = control.update(angle, t, *endpoints)
                 reliable = control.reliable
                 intent_age = t - min(self.last_caster_hand, self.last_open)
-                if intent_age > 0.60:
-                    normal *= max(0.0, 1.0 - (intent_age - 0.60) / 0.25)
-                if intent_age > 0.90:
+                intent_hold = 1.10 if self.state in ("TRANSFER", "OVERDRIVE") else 0.60
+                if intent_age > intent_hold:
+                    normal *= max(0.0, 1.0 - (intent_age - intent_hold) / 0.25)
+                if intent_age > intent_hold + 0.30:
                     self.transition("READY", t)
                     normal = 0.0
                 if self.state == "OVERDRIVE" and (
                     reliable or (control.last_good is not None and t - control.last_good < 0.60)
                 ):
-                    self.intensity = 1.10 + 0.40 * normal
+                    self.intensity = normal + (1.10 + 0.40 * normal - normal) * smoothstep(self.migration)
                 else:
                     self.intensity = normal
             else:
@@ -174,7 +176,7 @@ class Circle:
                 self.support = self.caster = None
                 self.distances.clear()
                 self.support_path.clear()
-        target = 1.0 if self.state == "OVERDRIVE" else 0.0
+        target = 1.0 if self.state == "OVERDRIVE" else 0.45 if self.state == "TRANSFER" else 0.0
         self.migration += max(-dt / 0.35, min(dt / 0.35, target - self.migration))
         visibility = 0.0 if self.state == "OFF" else 1.0
         if self.state == "FADING":

@@ -29,3 +29,9 @@ PySide6/Qt 使用动态库；发行目录 `_internal` 中保留动态链接形�
 One Euro 采用公开论文的自适应低通公式自行实现，未复制候选仓库文件。算法来源：[Casiez 等，CHI 2012](https://gery.casiez.net/1euro/)。MediaPipe 的模型/坐标语义、Qt 的 FBO 所有权、ModernGL 的接口参考各自官方文档；没有将参考示例整段作为原创提交。
 
 方案列出的其它 GitHub 候选本次未引入代码或素材，因此没有可宣称复用的 commit/文件。项目自身授权由仓库所有者决定，第三方许可证不自动适用于自研代码。
+
+## 用户提供的 Gemini 候选（v0.3.0）
+
+来源为本会话用户提供的审查文本，附件标识 `04f54740-fe70-491e-bc53-7e18d15a889c`，原文SHA256：`2ca18645f7ba08b369e2b908015af17565ebf45cd0801e874e674cc6b2ca5df4`。采用范围：`assets/stage.frag`、`src/mirror_moon/guide.py`、`app.py`的STYLE候选。它不是另一个开源仓库，不宣称其为MIT或有已核实的第三方repo commit。
+
+修改包括GLSL边界/亮度/投影来源、镜面与碎片纹理一致性、uniform绑定、引导阶段插值/动作速度/文案及校准状态。源码与diff标明实际集成内容，不能把AI候选或模型算法说成本组独立发明。基础仓库未整套照搬其它作品；许可证仍按上述依赖逐项保留。

@@ -22,6 +22,8 @@ class Blade:
         self.reverse_pending = False
         self.motion_start = None
         self.last_seen = -1e9
+        self.pose_offset = (0.0, 0.0)
+        self.pose_bridge = False
 
     def reset_motion(self):
         self.state, self.side = "IDLE", None
@@ -48,6 +50,9 @@ class Blade:
                     self.side, self.state, self.start = arm.side, "ARMED", t
                     self.scale, self.anchor = f.scale, f.chest
                     self.last_seen = t
+                    pose_wrist = arm.pose_wrist or arm.wrist
+                    self.pose_offset = tuple(a - b for a, b in zip(arm.wrist, pose_wrist))
+                    self.pose_bridge = False
                     self.motion_start = None
                     self.direction = 1.0 if arm.shoulder[0] > opposite[0] else -1.0
                     self.history = [
@@ -62,19 +67,41 @@ class Blade:
                     break
         elif self.state in ("ARMED", "SWING"):
             arm = f.arm(self.side)
+            point = arm.wrist
+            available = arm.hand_valid
+            invalid_return = False
             if arm.hand_valid:
+                if self.pose_bridge and self.history:
+                    actual = ((point[0] - f.chest[0]) / self.scale, (point[1] - f.chest[1]) / self.scale)
+                    invalid_return = distance(actual, self.history[-1][1]) > 0.55
                 self.last_seen = t
+                pose_wrist = arm.pose_wrist or arm.wrist
+                self.pose_offset = tuple(a - b for a, b in zip(arm.wrist, pose_wrist))
+                self.pose_bridge = False
+            elif (
+                arm.tracked
+                and arm.wrist_confidence >= 0.60
+                and arm.elbow_visible
+                and t - self.last_seen <= self.cfg.blade_pose_bridge
+            ):
+                # Observed, identity-anchored Pose wrist, not extrapolated velocity.
+                pose_wrist = arm.pose_wrist or arm.wrist
+                point = tuple(a + b for a, b in zip(pose_wrist, self.pose_offset))
+                available = True
+                self.pose_bridge = True
             else:
                 # A reacquisition must start a new observed trajectory, never bridge an occlusion.
                 self.history.clear()
                 self.motion_start = None
                 self.state = "ARMED"
-            if t - self.last_seen > 0.35 or (
-                self.motion_start is not None and t - self.motion_start > self.cfg.blade_max_time
+            if (
+                invalid_return
+                or t - self.last_seen > 0.35
+                or (self.motion_start is not None and t - self.motion_start > self.cfg.blade_max_time)
             ):
                 self.reset_motion()
-            elif arm.hand_valid:
-                p = ((arm.wrist[0] - f.chest[0]) / self.scale, (arm.wrist[1] - f.chest[1]) / self.scale)
+            elif available:
+                p = ((point[0] - f.chest[0]) / self.scale, (point[1] - f.chest[1]) / self.scale)
                 if not self.history:
                     self.history = [(t, p)]
                 if self.history and t > self.history[-1][0]:
@@ -87,7 +114,7 @@ class Blade:
                         span = distance(self.history[0][1], p)
                         length = sum(distance(a[1], b[1]) for a, b in zip(self.history, self.history[1:]))
                         recent = recent_samples(self.history, t, 0.16, 0.35)
-                        velocity = math.hypot(*fitted_velocity(recent))
+                        velocity = max(speed, math.hypot(*fitted_velocity(recent)))
                         if span > 0.12:
                             self.state = "SWING"
                             if self.motion_start is None:
@@ -99,6 +126,7 @@ class Blade:
                         outward_ok = outward * self.direction > 0.15
                         if (
                             self.motion_start is not None
+                            and arm.hand_valid  # Pose-only motion can preserve, never fire, an attack.
                             and t - self.motion_start >= self.cfg.blade_min_time
                             and span >= self.cfg.blade_span
                             and velocity >= self.cfg.blade_speed
@@ -164,6 +192,11 @@ class Mirror:
         self.close_candidate = None
         self.require_release = False
         self.seed_distance = 0.4
+        self.hand_seen = [-1e9, -1e9]
+        self.previous_angle = None
+        self.open_angle = 0.0
+        self.closing_peaks = []
+        self.frozen_folded = False
 
     def transition(self, state, t):
         self.state, self.entered = state, t
@@ -173,25 +206,42 @@ class Mirror:
         t, events = f.timestamp, []
         left, right = f.arms
         visible = f.valid and all(a.hand_valid for a in f.arms)
-        opened_hands = visible and all(a.shape == Shape.OPEN for a in f.arms)
-        good = opened_hands if self.state == "IDLE" else visible
+        for i, arm in enumerate(f.arms):
+            if arm.hand_valid:
+                self.hand_seen[i] = t
+        prepared = visible and all(a.shape in (Shape.OPEN, Shape.OTHER) for a in f.arms)
+        geometry_ok = f.valid and all(
+            a.hand_valid
+            or (
+                a.tracked
+                and a.wrist_confidence >= 0.60
+                and t - self.hand_seen[i] <= self.cfg.mirror_geometry_bridge
+            )
+            for i, a in enumerate(f.arms)
+        )
+        good = prepared if self.state == "IDLE" else geometry_ok
         dt = t - self.last_t
         if dt > self.cfg.max_gap:
             self.history.clear()
         self.last_t = t
         if good:
-            self.last_good = t
+            if visible:
+                self.last_good = t
             d = distance(left.wrist, right.wrist) / f.scale
             mid = ((left.wrist[0] + right.wrist[0]) / 2, (left.wrist[1] + right.wrist[1]) / 2)
             raw_angle = math.atan2(right.wrist[1] - left.wrist[1], right.wrist[0] - left.wrist[0])
-            # Left/right pose order may be reversed in unmirrored images. Axis is unoriented.
-            raw_angle = (raw_angle + math.pi / 2) % math.pi - math.pi / 2
-            self.angle = max(-0.6, min(0.6, raw_angle))
+            # Unwrap the unoriented hand axis; an identity flip must not spin the mirror 180°.
+            if d > 0.35:
+                if self.previous_angle is None:
+                    self.angle = (raw_angle + math.pi / 2) % math.pi - math.pi / 2
+                else:
+                    self.angle += (raw_angle - self.previous_angle + math.pi / 2) % math.pi - math.pi / 2
+                self.previous_angle = raw_angle
             if self.state == "IDLE":
                 if d > 0.65:
                     self.require_release = False
                 seed = (
-                    not self.require_release and 0.15 <= d <= 0.90 and distance(mid, f.chest) / f.scale < 1.2
+                    not self.require_release and 0.15 <= d <= 0.90 and distance(mid, f.chest) / f.scale < 0.90
                 )
                 if self.hold.ready("seed", seed, t, self.cfg.mirror_seed):
                     self.transition("SEED", t)
@@ -200,7 +250,9 @@ class Mirror:
                 if d > max(0.70, self.seed_distance + 0.28):
                     self.transition("OPENING", t)
                     self.opened, self.max_distance = t, d
+                    self.open_angle = self.angle
                     self.history.clear()
+                    self.closing_peaks.clear()
                     events.append(("mirror_open", (), 0.5))
                 elif t - self.entered > 2.0:
                     self.transition("IDLE", t)
@@ -208,10 +260,27 @@ class Mirror:
                 if self.state == "OPENING" and t - self.opened >= 0.35:
                     self.transition("MANIPULATING", t)
                 self.max_distance = max(self.max_distance, d)
-                self.history.append((t, d))
+                if not visible:
+                    self.history.clear()
+                    self.closing_peaks.clear()
+                    self.hold.ready("slow_close", False, t, self.cfg.mirror_close_hold)
+                if self.history and d > self.history[-1][1] + 0.05:
+                    self.closing_peaks.clear()
+                    self.history.clear()
+                adjacent_speed = (
+                    (self.history[-1][1] - d) / max(0.001, t - self.history[-1][0]) if self.history else 0.0
+                )
+                if visible:
+                    self.history.append((t, d))
                 self.history = [h for h in self.history if t - h[0] <= 0.4][-20:]
                 recent = recent_samples(self.history, t, 0.16, 0.35)
-                speed = -fitted_velocity([(stamp, (value, 0.0)) for stamp, value in recent])[0]
+                speed = max(
+                    adjacent_speed, -fitted_velocity([(stamp, (value, 0.0)) for stamp, value in recent])[0]
+                )
+                if visible and len(recent) >= 2:
+                    self.closing_peaks.append((t, speed))
+                self.closing_peaks = [row for row in self.closing_peaks if t - row[0] <= 0.22]
+                peak_speed = max((row[1] for row in self.closing_peaks), default=0.0)
                 if (
                     d < 0.55
                     and speed > self.cfg.mirror_shatter_speed
@@ -223,16 +292,29 @@ class Mirror:
                 if t - self.opened >= self.cfg.mirror_min_age:
                     if (
                         d < 0.70
-                        and speed > self.cfg.mirror_shatter_speed
+                        and visible
+                        and len(recent) >= 2
+                        and adjacent_speed >= -0.10
+                        and peak_speed > self.cfg.mirror_shatter_speed
                         and self.max_distance - d > 0.5 * self.max_distance
                     ):
+                        self.frozen_folded = self.state == "FOLDING"
                         self.transition("SHATTER", t)
                         events.append(
                             ("shatter", (self.center, (self.size, self.angle)), min(1.0, speed / 5.0))
                         )
-                    elif d < 0.38:
+                    elif self.hold.ready(
+                        "slow_close",
+                        visible and d < self.cfg.mirror_close_distance and abs(speed) < 0.8,
+                        t,
+                        self.cfg.mirror_close_hold,
+                    ):
                         self.transition("CLOSING", t)
                 if self.state == "MANIPULATING":
+                    if self.hold.ready(
+                        "twist", d > 0.75 and abs(self.angle - self.open_angle) > 0.50, t, 0.25
+                    ):
+                        self.transition("FOLDING", t)
                     if self.hold.ready("large", d > 1.5, t, 0.6):
                         if self.fold_anchor is None:
                             self.fold_anchor = mid
@@ -241,7 +323,7 @@ class Mirror:
                     else:
                         self.fold_anchor = None
             if self.state not in ("CLOSING", "SHATTER"):
-                k = 1.0 - math.exp(-max(0.0, dt) * 14.0)
+                k = 1.0 - math.exp(-max(0.0, dt) * 28.0)
                 self.center = tuple(a + (b - a) * k for a, b in zip(self.center if self.size else mid, mid))
                 target_size = max(0.12, d * 0.5) * f.scale
                 self.size += (target_size - self.size) * k if self.size else target_size
@@ -250,6 +332,8 @@ class Mirror:
             # Missing/reacquired samples never establish closing velocity.
             self.history.clear()
             self.close_candidate = None
+            self.closing_peaks.clear()
+            self.hold.ready("slow_close", False, t, self.cfg.mirror_close_hold)
             if t - self.last_good > self.cfg.mirror_lost:
                 self.transition("CLOSING", t)
         if (not good and any(a.hand_valid and a.shape != Shape.OPEN for a in f.arms)) or all(
@@ -261,16 +345,17 @@ class Mirror:
             self.hold.clear()
             self.fold_anchor = None
             self.require_release = True
+            self.previous_angle = None
         self.visibility = 0.0 if self.state in ("IDLE", "SHATTER") else 1.0
         if self.state == "CLOSING":
             self.visibility = max(0.0, 1.0 - (t - self.entered) / 0.5)
         if self.state == "OPENING":
             self.visibility = min(1.0, (t - self.opened) / 0.35)
         hints = {
-            "IDLE": "双手在胸前靠近开掌，停留后向两侧拉开",
+            "IDLE": "双掌在胸前稍错开，停一下再拉开；无需贴掌",
             "SEED": "镜缝准备完成（尚未展开）：向两侧拉开双手",
             "OPENING": "镜面展开",
-            "MANIPULATING": "镜面已展开：慢合收镜，快合至一拳距离碎镜，无需拍掌",
+            "MANIPULATING": "慢合并稍停可收镜，快合至一拳距离碎镜；转动双手可折镜",
             "FOLDING": "万象折镜；慢合收镜，快合碎镜",
             "SHATTER": "镜界碎裂，放松双手后重新开始",
             "CLOSING": "镜界收拢",
@@ -338,7 +423,15 @@ class Engine:
             self.event_id += 1
             events.append(
                 Event(
-                    self.event_id, kind, features.frame_id, t, tuple(points), strength, self.event_id * 7919
+                    self.event_id,
+                    kind,
+                    features.frame_id,
+                    t,
+                    tuple(points),
+                    strength,
+                    self.event_id * 7919,
+                    folded=self.mirror.frozen_folded if kind == "shatter" else False,
+                    body_scale=features.scale,
                 )
             )
         return self.view, tuple(events)
