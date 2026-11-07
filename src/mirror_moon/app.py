@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFileDialog,
-    QFrame,
     QHBoxLayout,
     QLabel,
     QMainWindow,
@@ -29,7 +28,7 @@ from . import __version__
 from .audio import Audio
 from .control import fit_calibration, valid_endpoints
 from .diagnostics import Recorder
-from .guide import PoseGuide
+from .guide import FiligreePanel, PoseGuide
 from .pipeline import Pipeline
 from .render import GLStage, PainterStage, RenderState
 from .resources import user_dir
@@ -40,7 +39,7 @@ class Window(QMainWindow):
         super().__init__()
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self.args = args
-        self.setWindowTitle(f"镜中取月 · SPECULUM LUNAE v{__version__}")
+        self.setWindowTitle(f"镜中取月 · SPECULUM ASTRORUM v{__version__}")
         self.resize(1240, 860)
         self.setMinimumSize(1020, 720)
         self.pipeline = None
@@ -80,28 +79,25 @@ class Window(QMainWindow):
         self.container.setObjectName("sanctumRoot")
         self.setCentralWidget(self.container)
         layout = QVBoxLayout(self.container)
-        layout.setContentsMargins(20, 14, 20, 14)
+        layout.setContentsMargins(18, 14, 18, 14)
         layout.setSpacing(10)
 
-        # ── Classical Roman Architrave Header ──
-        header_frame = QFrame()
-        header_frame.setObjectName("architraveHeader")
+        # ── Engraved Astrolabe Header Tablet (with custom QPainter corner filigree & celestial watermark) ──
+        header_frame = FiligreePanel(corner_size=18.0, watermark=True)
         header = QHBoxLayout(header_frame)
-        header.setContentsMargins(18, 10, 18, 10)
+        header.setContentsMargins(20, 10, 20, 10)
         header.setSpacing(14)
 
         title = QLabel("镜 中 取 月")
         title.setObjectName("title")
         header.addWidget(title)
 
-        subtitle = QLabel("SPECULUM LUNAE · 古星盘与太虚魔镜法典")
+        subtitle = QLabel("SPECULUM ASTRORUM · 皇家星象仪与太虚魔镜")
         subtitle.setObjectName("romanSubtitle")
         header.addWidget(subtitle)
         header.addStretch()
 
-        # User-facing spell selector hides "月刃术" (shelved per user request),
-        # while keeping internal index 1 hidden so automated smoke scripts (`setCurrentIndex(1)`) still pass!
-        spell_label = QLabel("✦ 秘法卷轴")
+        spell_label = QLabel("✦ 秘法典籍")
         spell_label.setObjectName("goldSectionLabel")
         header.addWidget(spell_label)
         self.mode = QComboBox()
@@ -114,22 +110,21 @@ class Window(QMainWindow):
         self.mode.view().setRowHidden(1, True)
         self.mode.setAccessibleName("施法系统")
 
-        elem_label = QLabel("✦ 星象属性")
+        elem_label = QLabel("✦ 星盘共鸣")
         elem_label.setObjectName("goldSectionLabel")
         header.addWidget(self.mode)
         header.addWidget(elem_label)
         self.element = QComboBox()
-        self.element.addItem("☽ 月华 (Lunar Cyan & Gold)", "moon")
-        self.element.addItem("⚡ 雷霆 (Astral Violet & Gold)", "lightning")
+        self.element.addItem("☽ 月华 (Lunar Sapphire)", "moon")
+        self.element.addItem("⚡ 雷霆 (Astral Amethyst)", "lightning")
         self.element.setAccessibleName("法阵元素")
         header.addWidget(self.element)
         layout.addWidget(header_frame)
 
-        # ── Sanctum Control Bar ──
-        source_frame = QFrame()
-        source_frame.setObjectName("sanctumToolbar")
+        # ── Engraved Sanctum Control Bar ──
+        source_frame = FiligreePanel(corner_size=14.0, watermark=False)
         source_row = QHBoxLayout(source_frame)
-        source_row.setContentsMargins(14, 7, 14, 7)
+        source_row.setContentsMargins(16, 8, 16, 8)
         source_row.setSpacing(10)
 
         self.source = QComboBox()
@@ -154,7 +149,7 @@ class Window(QMainWindow):
         video_button.clicked.connect(self.open_video)
         source_row.addWidget(video_button)
 
-        self.pause_button = QPushButton("凝滞时间")
+        self.pause_button = QPushButton("凝滞星轨")
         self.pause_button.clicked.connect(self.pause_clicked)
         source_row.addWidget(self.pause_button)
 
@@ -176,25 +171,28 @@ class Window(QMainWindow):
         self.stage_layout.addWidget(self.guide)
         layout.addLayout(self.stage_layout, 1)
 
-        # ── Inscrybed Prophecy / Action Banner ──
+        # ── Engraved Prophecy / Action Banner ──
+        hint_frame = FiligreePanel(corner_size=13.0, watermark=False)
+        hint_layout = QHBoxLayout(hint_frame)
+        hint_layout.setContentsMargins(18, 7, 18, 7)
         self.hint = QLabel("开启魔镜视界，令双肩、双肘与双手映入星盘")
         self.hint.setObjectName("hint")
-        layout.addWidget(self.hint)
+        hint_layout.addWidget(self.hint)
+        layout.addWidget(hint_frame)
 
         # ── Arcane Aether Resonance Meter ──
         self.strength = QProgressBar()
         self.strength.setRange(0, 150)
         self.strength.setValue(0)
         self.strength.setTextVisible(True)
-        self.strength.setFormat("✦ 魔力共鸣 0% ✦")
-        self.strength.setFixedHeight(24)
+        self.strength.setFormat("✦ 星盘魔力共鸣 0% ✦")
+        self.strength.setFixedHeight(22)
         layout.addWidget(self.strength)
 
         # ── Lower Grimoire Pedestal & Calibration Controls ──
-        pedestal_frame = QFrame()
-        pedestal_frame.setObjectName("pedestalPanel")
+        pedestal_frame = FiligreePanel(corner_size=16.0, watermark=False)
         pedestal_layout = QVBoxLayout(pedestal_frame)
-        pedestal_layout.setContentsMargins(14, 8, 14, 8)
+        pedestal_layout.setContentsMargins(16, 8, 16, 8)
         pedestal_layout.setSpacing(6)
 
         footer = QHBoxLayout()
@@ -221,7 +219,7 @@ class Window(QMainWindow):
         reset.clicked.connect(self.cancel)
         footer.addWidget(reset)
 
-        screenshot = QPushButton("拓印铭文 (截图)")
+        screenshot = QPushButton("拓印星图 (截图)")
         screenshot.clicked.connect(self.screenshot)
         footer.addWidget(screenshot)
 
@@ -237,7 +235,7 @@ class Window(QMainWindow):
         self.quality.currentIndexChanged.connect(lambda i: setattr(self.data, "quality", i))
         settings.addWidget(self.quality)
 
-        settings.addWidget(QLabel("魔力辉光"))
+        settings.addWidget(QLabel("星辉强度"))
         gain = QSlider(Qt.Orientation.Horizontal)
         gain.setRange(20, 150)
         gain.setValue(115)
@@ -345,8 +343,8 @@ class Window(QMainWindow):
         if self.pipeline and not self.pipeline.stop_event.is_set():
             self.paused = False
             self.pipeline.set_controls(paused=False)
-            self.start_button.setText("✦ 施法共鸣中")
-            self.pause_button.setText("凝滞时间")
+            self.start_button.setText("✦ 星盘共鸣中")
+            self.pause_button.setText("凝滞星轨")
         else:
             source = self.pipeline.source if self.pipeline else self.source.currentData()
             self.start_pipeline(source, auto=True)
@@ -404,7 +402,7 @@ class Window(QMainWindow):
             profiles=tuple((side, *pair) for side, pair in self.profiles.items()),
         )
         self.pipeline.start()
-        self.start_button.setText("✦ 开始施法" if self.paused else "✦ 施法共鸣中")
+        self.start_button.setText("✦ 开始施法" if self.paused else "✦ 星盘共鸣中")
         self.source_label.setText(
             "构造动作演示 · 非真人识别"
             if self.args.demo
@@ -461,7 +459,7 @@ class Window(QMainWindow):
             return
         self.paused = not self.paused
         self.data.reset_effects()
-        self.pause_button.setText("解除凝滞" if self.paused else "凝滞时间")
+        self.pause_button.setText("解除凝滞" if self.paused else "凝滞星轨")
         if self.pipeline:
             self.pipeline.set_controls(paused=self.paused)
 
@@ -556,11 +554,11 @@ class Window(QMainWindow):
                 self.hint.setText("预览中：调整站位后点击开始施法" if self.paused else scene.spell.hint)
                 self.strength.setValue(round(scene.spell.intensity * 100))
                 self.strength.setFormat(
-                    f"✦ 魔力共鸣 {round(scene.spell.intensity * 100)}%"
+                    f"✦ 星盘魔力共鸣 {round(scene.spell.intensity * 100)}%"
                     + (" · 【双臂过载解放】 ✦" if scene.spell.intensity > 1.0 else " ✦")
                 )
                 self.strength.setStyleSheet(
-                    "QProgressBar::chunk {background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #b45309, stop:0.5 #eab308, stop:1 #fef08a);}"
+                    "QProgressBar::chunk {background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4c1d95, stop:0.5 #8b5cf6, stop:1 #f3e8ff);}"
                     if scene.spell.intensity > 1.0
                     else ""
                 )
@@ -716,30 +714,19 @@ class Window(QMainWindow):
         event.accept()
 
 
-# Classical Greco-Roman / Arcane Grimoire Aesthetic (Obsidian Marble, Antique Brass, Burnished Gold & Parchment Ivory)
+# Mystical European Astral Observatory Palette (Midnight Velvet, Brushed Champagne-Silver Filigree, Starlight Ivory)
 STYLE = """
 QMainWindow, QWidget#sanctumRoot {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #141010, stop:0.5 #0d0b0c, stop:1 #080607);
-    color: #e8dcc4;
-    font-family: 'Palatino Linotype', 'Georgia', 'Songti SC', 'SimSun', 'Microsoft YaHei UI';
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #0b0a12, stop:0.5 #08070d, stop:1 #050408);
+    color: #e2e8f0;
+    font-family: 'Palatino Linotype', 'Georgia', 'STZhongsong', 'Microsoft YaHei UI';
     font-size: 13px;
-}
-QFrame#architraveHeader {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #241b16, stop:0.5 #1b1411, stop:1 #241b16);
-    border: 2px solid #b8924a;
-    border-top: 3px solid #e2c07d;
-    border-radius: 6px;
-}
-QFrame#sanctumToolbar, QFrame#pedestalPanel {
-    background: #171210;
-    border: 1px solid #785c2a;
-    border-radius: 6px;
 }
 QLabel#title {
     font-family: 'STZhongsong', 'STKaiti', 'KaiTi', 'Palatino Linotype', serif;
-    font-size: 30px;
+    font-size: 29px;
     font-weight: bold;
-    color: #f7e7be;
+    color: #f1e6d0;
     letter-spacing: 3px;
     padding-right: 10px;
 }
@@ -747,116 +734,113 @@ QLabel#romanSubtitle {
     font-family: 'Georgia', 'Times New Roman', 'Microsoft YaHei UI', serif;
     font-size: 13px;
     font-style: italic;
-    color: #c8a256;
+    color: #c6b48e;
 }
 QLabel#goldSectionLabel {
-    color: #e2c07d;
+    color: #d6c39c;
     font-weight: bold;
     font-size: 13px;
 }
 QLabel#hint {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #261c14, stop:0.5 #1c1510, stop:1 #261c14);
-    border: 1.5px solid #b8924a;
-    border-left: 5px solid #eab308;
-    border-right: 5px solid #eab308;
-    border-radius: 5px;
-    font-size: 19px;
-    font-weight: bold;
-    color: #fdf6e2;
-    padding: 9px 16px;
+    background: transparent;
+    border: none;
+    font-size: 18px;
+    font-weight: 600;
+    color: #f8fafc;
+    padding: 2px 6px;
 }
 QLabel#sourceLabel {
-    background: #211914;
-    border: 1px solid #967438;
+    background: #141222;
+    border: 1px solid #645947;
     border-radius: 11px;
-    color: #e2c07d;
+    color: #d6c39c;
     padding: 4px 12px;
     font-size: 12px;
 }
 QLabel#statusText {
-    color: #d6c5a5;
+    color: #94a3b8;
     font-size: 13px;
 }
 QLabel#diagnostics {
-    background: #100d0b;
-    border: 1px solid #6e552c;
+    background: #090811;
+    border: 1px solid #473f34;
     border-radius: 5px;
     font-family: 'Consolas', 'Microsoft YaHei UI';
     font-size: 12px;
-    color: #e2c07d;
+    color: #cbd5e1;
     padding: 6px 10px;
 }
 QPushButton, QComboBox {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #2d221b, stop:1 #1b1410);
-    border: 1.5px solid #8c6d36;
-    color: #f3e5c8;
-    padding: 7px 14px;
-    border-radius: 5px;
-    font-weight: 600;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #1d1a2b, stop:1 #110f1a);
+    border: 1px solid #7c6f5a;
+    color: #e2e8f0;
+    padding: 6px 13px;
+    border-radius: 4px;
+    font-weight: 500;
 }
 QPushButton:hover, QComboBox:hover {
-    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #3d2f24, stop:1 #281e17);
-    border-color: #eab308;
+    background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #28243b, stop:1 #181526);
+    border-color: #d6c39c;
     color: #ffffff;
 }
 QPushButton:pressed {
-    background: #140f0c;
+    background: #0c0a12;
 }
 QPushButton#primary {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #9a6f1a, stop:0.5 #ca9a32, stop:1 #9a6f1a);
-    color: #120d08;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1e3a5f, stop:0.5 #2b547e, stop:1 #1e3a5f);
+    color: #f8fafc;
     font-weight: bold;
-    border: 1.5px solid #fef08a;
+    border: 1.2px solid #d6c39c;
 }
 QPushButton#primary:hover {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #b48522, stop:0.5 #eab308, stop:1 #b48522);
-    color: #090604;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #254b7a, stop:0.5 #36699c, stop:1 #254b7a);
+    border-color: #f1e6d0;
 }
 QPushButton:disabled, QComboBox:disabled {
-    background: #120e0d;
-    border-color: #3b2f20;
-    color: #635542;
+    background: #0d0c14;
+    border-color: #2d2a38;
+    color: #475569;
 }
 QComboBox QAbstractItemView {
-    background: #1e1713;
-    border: 1.5px solid #c8a256;
-    color: #f3e5c8;
-    selection-background-color: #8c6d36;
+    background: #141220;
+    border: 1px solid #c6b48e;
+    color: #e2e8f0;
+    selection-background-color: #2b547e;
     selection-color: #ffffff;
 }
 QProgressBar {
-    background: #120e0c;
-    border: 1.5px solid #967438;
-    border-radius: 6px;
+    background: #0b0a14;
+    border: 1px solid #645947;
+    border-radius: 5px;
     text-align: center;
     font-weight: bold;
-    font-size: 13px;
-    color: #fffbeb;
+    font-size: 12px;
+    color: #f8fafc;
 }
 QProgressBar::chunk {
-    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1e3a8a, stop:0.45 #0284c7, stop:0.85 #38bdf8, stop:1 #e2c07d);
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1e3a8a, stop:0.5 #0284c7, stop:0.85 #38bdf8, stop:1 #bae6fd);
     border-radius: 4px;
 }
 QSlider::groove:horizontal {
-    height: 6px;
-    background: #261e18;
-    border: 1px solid #6e552c;
-    border-radius: 3px;
+    height: 5px;
+    background: #1b1828;
+    border: 1px solid #473f34;
+    border-radius: 2px;
 }
 QSlider::sub-page:horizontal {
-    background: #c8a256;
-    border-radius: 3px;
+    background: #93c5fd;
+    border-radius: 2px;
 }
 QSlider::handle:horizontal {
-    width: 14px;
+    width: 13px;
     margin: -5px 0;
-    background: #f7e7be;
-    border: 2px solid #8c6d36;
-    border-radius: 7px;
+    background: #f1e6d0;
+    border: 1.5px solid #645947;
+    border-radius: 6px;
 }
 QCheckBox {
     spacing: 6px;
-    color: #dfd1b4;
+    color: #cbd5e1;
 }
 """
 

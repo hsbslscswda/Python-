@@ -1,0 +1,139 @@
+"""Real GL checks with deterministic synthetic textures; never uses the camera."""
+
+import argparse
+import json
+from pathlib import Path
+
+import cv2
+import moderngl
+import numpy as np
+from PySide6.QtGui import QGuiApplication, QOffscreenSurface, QOpenGLContext, QSurfaceFormat
+
+from mirror_moon.mirror_texture import mirror_texture
+
+ROOT = Path(__file__).resolve().parents[1]
+VERTEX = """#version 330
+in vec2 position; out vec2 uv;
+void main() { gl_Position=vec4(position,0,1); uv=position*0.5+0.5; }
+"""
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--comparison", type=Path)
+    parser.add_argument("--output", type=Path, default=ROOT / "local/shader-probe")
+    args = parser.parse_args()
+    args.output.mkdir(parents=True, exist_ok=True)
+    app = QGuiApplication([])
+    fmt = QSurfaceFormat()
+    fmt.setVersion(3, 3)
+    fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
+    surface = QOffscreenSurface()
+    surface.setFormat(fmt)
+    surface.create()
+    native = QOpenGLContext()
+    native.setFormat(fmt)
+    assert native.create() and native.makeCurrent(surface)
+    ctx = moderngl.create_context(require=330)
+    source = (ROOT / "assets/stage.frag").read_text("utf-8")
+    vertices = np.array((-1, -1, 1, -1, -1, 1, 1, 1), dtype="f4")
+
+    def draw(fragment, rgb, size, **overrides):
+        program = ctx.program(vertex_shader=VERTEX, fragment_shader=fragment)
+        buffer = ctx.buffer(vertices.tobytes())
+        vao = ctx.vertex_array(program, [(buffer, "2f", "position")])
+        texture = ctx.texture((rgb.shape[1], rgb.shape[0]), 3, rgb.tobytes(), alignment=1)
+        texture.filter = (moderngl.LINEAR, moderngl.LINEAR)
+        colors = [ctx.texture(size, 4) for _ in range(2)]
+        fbo = ctx.framebuffer(color_attachments=colors)
+        fbo.use()
+        ctx.viewport = (0, 0, *size)
+        ctx.disable(moderngl.BLEND | moderngl.DEPTH_TEST)
+        texture.use(0)
+        values = dict(
+            camera_tex=0,
+            viewport=size,
+            source_size=(rgb.shape[1], rgb.shape[0]),
+            center=(320.0, 180.0),
+            palm=(400.0, 200.0),
+            chest=(320.0, 180.0),
+            shoulder=100.0,
+            radius=140.0,
+            time=12.0,
+            visibility=1.0,
+            intensity=0.0,
+            migration=0.0,
+            mirror_angle=0.0,
+            mode=0,
+            mirrored=0,
+            lightning=0,
+            folded=0,
+            effect_gain=1.15,
+            quality=0,
+            body_yaw=0.0,
+            mirror_time=12.0,
+            slash_count=0,
+        )
+        values.update(overrides)
+        for name, value in values.items():
+            if name in program:
+                program[name].value = value
+        vao.render(moderngl.TRIANGLE_STRIP)
+        pixels = (
+            np.frombuffer(fbo.read(components=3, alignment=1), dtype="uint8")
+            .reshape(size[1], size[0], 3)
+            .copy()
+        )
+        for resource in (vao, buffer, fbo, *colors, texture, program):
+            resource.release()
+        return pixels
+
+    flat = np.full((360, 640, 3), (24, 37, 54), dtype="uint8")
+    current = draw(source, flat, (640, 360))
+    cv2.imwrite(str(args.output / "array-after.png"), cv2.cvtColor(current, cv2.COLOR_RGB2BGR))
+    report = {"synthetic_only": True, "renderer": ctx.info["GL_RENDERER"]}
+    if args.comparison:
+        before = draw(args.comparison.read_text("utf-8"), flat, (640, 360))
+        cv2.imwrite(str(args.output / "array-before.png"), cv2.cvtColor(before, cv2.COLOR_RGB2BGR))
+        white_before = float(np.mean(np.all(before >= 245, axis=-1)))
+        white_after = float(np.mean(np.all(current >= 245, axis=-1)))
+        report["fixed_input_near_white_fraction"] = {"before": white_before, "after": white_after}
+        assert white_after < white_before * 0.60, report
+
+    # Sample the complete current mirror fragment on exactly the CPU patch's grid.
+    # Exclude its exterior frame; frozen shards retain the mirror interior image.
+    original = "vec2 p = (uv * viewport - (viewport - source_size * fit) * 0.5) / fit;"
+    assert source.count(original) == 1
+    patch = source.replace(
+        original,
+        """vec2 patchQ = (gl_FragCoord.xy-vec2(0.5)) / (viewport-vec2(1.0));
+    patchQ = (patchQ-vec2(0.5))*vec2(radius*2.0,radius*1.32);
+    vec2 p = center + turn(mirror_angle)*patchQ;""",
+    )
+    y, x = np.mgrid[:360, :640]
+    rgb = np.stack((40 + x / 5, 30 + y / 3, 60 + (x + y) / 8), axis=-1).astype("uint8")
+    rows = []
+    for folded in (False, True):
+        for angle in (0.0, 0.8):
+            cpu = mirror_texture(rgb, (320.0, 180.0), 120.0, angle, folded, 100.0, 12.0)
+            h, w = cpu.shape[:2]
+            gpu = draw(patch, rgb, (w, h), mode=2, radius=120.0, mirror_angle=angle, folded=int(folded))
+            px, py = np.meshgrid(np.linspace(-120, 120, w), np.linspace(-79.2, 79.2, h))
+            interior = np.maximum(abs(px) - 120, abs(py) - 79.2) < -35
+            error = np.abs(cpu.astype("float32") - gpu.astype("float32"))[interior]
+            median, p95 = float(np.median(error)), float(np.percentile(error, 95))
+            rows.append(
+                {"folded": folded, "angle": angle, "channel_error_median": median, "channel_error_p95": p95}
+            )
+            assert median <= 2.0 and p95 <= 5.0, rows
+    report["cpu_gl_mirror_interior_parity"] = rows
+    (args.output / "results.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), "utf-8")
+    print(json.dumps(report))
+    ctx.release()
+    native.doneCurrent()
+    surface.destroy()
+    app.quit()
+
+
+if __name__ == "__main__":
+    main()

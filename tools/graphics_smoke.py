@@ -50,7 +50,7 @@ def main():
             return
         # New cyan/gold bloom can tint the orientation marker without moving it.
         # Check camera/FBO orientation with an OFF spell, then test effects below.
-        window.pipeline.set_controls(suppress_until=time.perf_counter() + 6.0)
+        window.pipeline.set_controls(suppress_until=time.perf_counter() + 60.0)
 
     QTimer.singleShot(0, neutral_resize_phase)
     states = defaultdict(set)
@@ -94,6 +94,7 @@ def main():
             return
         if not isinstance(window.stage, GLStage):
             checks.append({"resize": index, "renderer": "compat" if args.compat else "UNEXPECTED FALLBACK"})
+            advance_resize(index)
             return
         image = window.stage.grabFramebuffer()
         fit = min(image.width() / 1280, image.height() / 720)
@@ -112,6 +113,15 @@ def main():
                 "marker_rgb": [color.red(), color.green(), color.blue()],
             }
         )
+        advance_resize(index)
+
+    def advance_resize(index):
+        # Chain operations so slow first-use shader compilation cannot bunch up
+        # callbacks and accidentally inspect the same later size several times.
+        if index < 9:
+            QTimer.singleShot(100, lambda: resize(index + 1))
+        else:
+            QTimer.singleShot(200, fresh_motion_phase)
 
     def resize(index):
         if index % 2:
@@ -121,8 +131,7 @@ def main():
             window.resize(980 + index * 20, 700 + index * 8)
         QTimer.singleShot(180, lambda: check_frame(index))
 
-    for i in range(10):
-        QTimer.singleShot(500 + i * 400, lambda i=i: resize(i))
+    QTimer.singleShot(500, lambda: resize(0))
 
     def fresh_motion_phase():
         window.showNormal()
@@ -130,16 +139,16 @@ def main():
         # Resize may legitimately stall input and activate the loss guard.
         # Test gestures after an explicit fresh neutral, not by weakening that guard.
         window.start_pipeline(0, auto=True)
-
-    QTimer.singleShot(6000, fresh_motion_phase)
-    QTimer.singleShot(14000, lambda: window.stage_image(args.output / "circle-overdrive.png"))
-    QTimer.singleShot(14700, lambda: window.element.setCurrentIndex(1))
-    QTimer.singleShot(15200, lambda: window.stage_image(args.output / "circle-lightning.png"))
-    QTimer.singleShot(15500, lambda: window.element.setCurrentIndex(0))
-    QTimer.singleShot(23000, lambda: window.mode.setCurrentIndex(1))
-    QTimer.singleShot(28000, lambda: window.mode.setCurrentIndex(2))
-    QTimer.singleShot(32400, lambda: window.stage_image(args.output / "mirror-fold.png"))
-    QTimer.singleShot(38900, lambda: window.stage_image(args.output / "mirror-shatter.png"))
+        QTimer.singleShot(8000, lambda: window.stage_image(args.output / "circle-overdrive.png"))
+        QTimer.singleShot(8200, lambda: window.grab().save(str(args.output / "ui-full-synthetic.png")))
+        QTimer.singleShot(8700, lambda: window.element.setCurrentIndex(1))
+        QTimer.singleShot(9200, lambda: window.stage_image(args.output / "circle-lightning.png"))
+        QTimer.singleShot(9500, lambda: window.element.setCurrentIndex(0))
+        QTimer.singleShot(17000, lambda: window.mode.setCurrentIndex(1))
+        QTimer.singleShot(22000, lambda: window.mode.setCurrentIndex(2))
+        QTimer.singleShot(26400, lambda: window.stage_image(args.output / "mirror-fold.png"))
+        QTimer.singleShot(32900, lambda: window.stage_image(args.output / "mirror-shatter.png"))
+        QTimer.singleShot(35000, finish)
 
     def finish():
         sampler.stop()
@@ -156,7 +165,6 @@ def main():
         }
         (args.output / "results.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), "utf-8")
 
-    QTimer.singleShot(41000, finish)
     result = app.exec()
     report = json.loads((args.output / "results.json").read_text("utf-8"))
     assert report["workers_closed_cleanly"]
@@ -164,6 +172,7 @@ def main():
     assert report["events"].get("slash", 0) > 0
     assert report["events"].get("shatter", 0) > 0
     assert report["events"].get("double", 0) > 0
+    assert [c["resize"] for c in checks] == list(range(10))
     if not args.compat:
         assert all(c.get("red_marker_correct", False) for c in checks)
     print(json.dumps(report, ensure_ascii=False))

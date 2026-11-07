@@ -6,9 +6,9 @@
 
 发布页的 Windows ZIP 才是已上传的运行程序；开发分支可能先更新，以发布附件的版本号为准。
 
-下载 **MirrorMoon-Windows-v0.3.1.zip**，完整解压，再双击里面的 **启动摄像头.cmd**。无需配置 Python。不要下载自动生成的 “Source code” 来找 EXE，也不要只取出 MirrorMoon.exe，旁边的 `_internal` 必须保留。
+下载 **MirrorMoon-Windows-v0.3.2.zip**，完整解压，再双击里面的 **启动摄像头.cmd**。无需配置 Python。不要下载自动生成的 “Source code” 来找 EXE，也不要只取出 MirrorMoon.exe，旁边的 `_internal` 必须保留。
 
-窗口标题应显示 **v0.3.1**。本轮集成用户提供的八文件升级包：黑曜石鎏金界面、黄铜法阵与青蓝/紫金魔力分色、28%放大、身体朝向死区、134°默认伸直、搭臂与镜界维持/碎裂调优。这是修复候选，**新版真人动作与视觉体验尚待复验，不是课程最终验收版**。旧版已收到真实失败反馈，旧测试通过不代表好用。
+窗口标题应显示 **v0.3.2**。本轮集成第二份八文件升级包：哥特玫瑰花窗、多层星盘与36格程序化铭文、FiligreePanel卷草雕纹和星盘水印。修正遮罩导致的大片发白、逆序GLSL边界及冻结折镜映射；保留134°、28%放大和此前动作修复。这是修复候选，**新版真人动作与视觉体验尚待复验，不是课程最终验收版**。旧版已收到真实失败反馈，旧测试通过不代表好用。
 
 ## 怎么用
 
@@ -45,6 +45,7 @@ uv pip install --python .venv/Scripts/python.exe -e . --no-deps
 .venv/Scripts/ruff.exe check src tests tools
 .venv/Scripts/python.exe tools/graphics_smoke.py
 .venv/Scripts/python.exe tools/graphics_smoke.py --compat --output local/graphics-compat
+.venv/Scripts/python.exe tools/shader_probe.py
 .venv/Scripts/python.exe tools/ui_smoke.py
 .venv/Scripts/python.exe tools/build.py
 .venv/Scripts/python.exe tools/package_smoke.py --app-dir '实际解压目录'
