@@ -21,8 +21,8 @@ class Circle:
         self.last_support_hand = self.last_caster_hand = -1e9
         self.last_open = -1e9
         self.approach_until = 0.0
-        self.distances = deque(maxlen=24)
-        self.support_path = deque(maxlen=24)
+        self.distances = deque(maxlen=2048)
+        self.support_path = deque(maxlen=2048)
         self.session_started = False
         self.migration = self.intensity = 0.0
         self.last_t = None
@@ -105,6 +105,9 @@ class Circle:
 
             d, along = segment_distance(support.wrist, caster.elbow, caster.wrist)
             d /= s
+            for history in (self.distances, self.support_path):
+                while history and t - history[0][0] > 1.25:
+                    history.popleft()
             relative = ((support.wrist[0] - f.chest[0]) / s, (support.wrist[1] - f.chest[1]) / s)
             reference = next((row for row in self.distances if 0.15 <= t - row[0] <= 1.20), None)
             path_ref = next((row for row in self.support_path if 0.15 <= t - row[0] <= 1.20), None)

@@ -28,6 +28,7 @@ def synthesize(path: Path, frequency: float, duration: float, loop=False):
 
 class Audio:
     def __init__(self, parent):
+        self.closed = False
         directory = user_dir() / "audio"
         directory.mkdir(exist_ok=True)
         self.sounds = {}
@@ -48,6 +49,8 @@ class Audio:
         self.muted, self.volume, self.last_id = False, 0.0, 0
 
     def events(self, events):
+        if self.closed:
+            return
         for event in events:
             if event.event_id <= self.last_id:
                 continue
@@ -58,6 +61,8 @@ class Audio:
                 sound.play()
 
     def update(self, intensity):
+        if self.closed:
+            return
         target = 0.0 if self.muted else intensity * 0.16
         self.volume += (target - self.volume) * 0.12
         hum = self.sounds["hum"]
@@ -73,3 +78,13 @@ class Audio:
 
     def error(self):
         return any(s.status() == QSoundEffect.Status.Error for s in self.sounds.values())
+
+    def close(self):
+        if self.closed:
+            return
+        self.closed = True
+        for sound in self.sounds.values():
+            sound.stop()
+            sound.setSource(QUrl())
+            sound.deleteLater()
+        self.sounds.clear()

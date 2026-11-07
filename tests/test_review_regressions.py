@@ -181,3 +181,24 @@ def test_shatter_event_retains_folded_image_mapping_and_body_scale():
         _, emitted = e.update(mirror_frame(t, d))
         events.extend(emitted)
     assert len(events) == 1 and events[0].folded and events[0].body_scale == 200.0
+
+
+@pytest.mark.parametrize("hz", [10, 60])
+def test_slow_grip_approach_history_covers_seconds_at_both_input_rates(hz):
+    e = casting()
+    for i in range(int(3 * hz)):
+        t = 0.7 + i / hz
+        y = 254.0 + min(2.2, i / hz) * 20.0
+        view, _ = e.update(frame(t, support=(750.0, y)))
+    assert view.state == "OVERDRIVE"
+
+
+@pytest.mark.parametrize("hz", [15, 240])
+def test_blade_motion_span_does_not_disappear_into_a_fixed_frame_cap(hz):
+    e = armed_blade()
+    events = []
+    for i in range(1, int(0.4 * hz) + 1):
+        elapsed = i / hz
+        _, emitted = e.update(blade_frame(0.175 + elapsed, (400.0 + 340.0 * elapsed, 250.0)))
+        events.extend(emitted)
+    assert [x.kind for x in events] == ["slash"]

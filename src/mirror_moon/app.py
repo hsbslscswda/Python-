@@ -6,7 +6,7 @@ import time
 from collections import deque
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, Qt, QTimer, QUrl
+from PySide6.QtCore import QEvent, Qt, QTimer, QUrl, qInstallMessageHandler
 from PySide6.QtGui import QDesktopServices, QKeySequence, QShortcut, QSurfaceFormat
 from PySide6.QtWidgets import (
     QApplication,
@@ -37,6 +37,7 @@ from .resources import user_dir
 class Window(QMainWindow):
     def __init__(self, args):
         super().__init__()
+        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self.args = args
         self.setWindowTitle(f"镜中取月 v{__version__} · 动作体验修订版")
         self.resize(1180, 820)
@@ -615,6 +616,12 @@ class Window(QMainWindow):
             event.ignore()
             QTimer.singleShot(100, self.close)
             return
+        if not self.audio.closed:
+            # Let DeferredDelete destroy native sound backends while Qt's loop is alive.
+            self.audio.close()
+            event.ignore()
+            QTimer.singleShot(100, self.close)
+            return
         metrics = self.metrics()
         metrics["workers_closed_cleanly"] = clean
         metrics["workers_close_seconds"] = self.pipeline.close_seconds if self.pipeline else 0.0
@@ -767,6 +774,9 @@ def main():
         format="%(asctime)s %(levelname)s %(message)s",
         encoding="utf-8",
     )
+    previous_handler = qInstallMessageHandler(
+        lambda kind, context, message: logging.warning("Qt %s: %s", kind, message)
+    )
     fmt = QSurfaceFormat()
     fmt.setVersion(3, 3)
     fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
@@ -778,7 +788,9 @@ def main():
     app.setStyleSheet(STYLE)
     window = Window(args)
     window.show()
-    return app.exec()
+    result = app.exec()
+    qInstallMessageHandler(previous_handler)
+    return result
 
 
 if __name__ == "__main__":

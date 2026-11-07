@@ -96,6 +96,8 @@ def finalize():
         "missing-model-repeated.json",
         "control-bench.json",
         "review-before.log",
+        "slow-grip-before.log",
+        "compat-exit-repeated.json",
         "gemini-candidate-origin.json",
         "extracted-package-smoke.json",
         "ui-smoke-demo.json",

@@ -110,7 +110,7 @@ class Blade:
                         self.reset_motion()
                     else:
                         self.history.append((t, p))
-                        self.history = self.history[-64:]
+                        self.history = self.history[-2048:]
                         span = distance(self.history[0][1], p)
                         length = sum(distance(a[1], b[1]) for a, b in zip(self.history, self.history[1:]))
                         recent = recent_samples(self.history, t, 0.16, 0.35)
@@ -121,7 +121,7 @@ class Blade:
                                 self.motion_start = self.history[-2][0]
                         elif self.state == "ARMED":
                             self.start = t
-                            self.history = self.history[-8:]
+                            self.history = [h for h in self.history if t - h[0] <= 0.35]
                         outward = p[0] - self.history[0][1][0]
                         outward_ok = outward * self.direction > 0.15
                         if (
@@ -272,7 +272,7 @@ class Mirror:
                 )
                 if visible:
                     self.history.append((t, d))
-                self.history = [h for h in self.history if t - h[0] <= 0.4][-20:]
+                self.history = [h for h in self.history if t - h[0] <= 0.4][-2048:]
                 recent = recent_samples(self.history, t, 0.16, 0.35)
                 speed = max(
                     adjacent_speed, -fitted_velocity([(stamp, (value, 0.0)) for stamp, value in recent])[0]

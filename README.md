@@ -2,7 +2,9 @@
 
 ## 直接下载 Windows 程序
 
-**[下载 v0.3.0 Windows 运行包](https://github.com/hsbslscswda/Python-/releases/download/v0.3.0/MirrorMoon-Windows-v0.3.0.zip)** · [发布页面](https://github.com/hsbslscswda/Python-/releases/tag/v0.3.0)
+**[打开 Windows 运行包下载页](https://github.com/hsbslscswda/Python-/releases)**
+
+发布页的 Windows ZIP 才是已上传的运行程序；开发分支可能先更新，以发布附件的版本号为准。
 
 下载 **MirrorMoon-Windows-v0.3.0.zip**，完整解压，再双击里面的 **启动摄像头.cmd**。无需配置 Python。不要下载自动生成的 “Source code” 来找 EXE，也不要只取出 MirrorMoon.exe，旁边的 `_internal` 必须保留。
 
@@ -46,6 +48,7 @@ uv pip install --python .venv/Scripts/python.exe -e . --no-deps
 .venv/Scripts/python.exe tools/ui_smoke.py
 .venv/Scripts/python.exe tools/build.py
 .venv/Scripts/python.exe tools/package_smoke.py --app-dir '实际解压目录'
+.venv/Scripts/python.exe tools/zip_smoke.py --app-dir '实际打包目录'
 ```
 
 `--demo` 是构造动作；`--video 'D:/test.mp4'` 为录像。`--record-features local/G0.jsonl` 主动记录；`tools/replay.py` 回放，可加 `expected_state` 标注断言。`pipeline.py` 负责容量一采集、同帧推理与绑定视频快照；`features.py` 做坐标/身份/角度，`star_ring.py` 与 `interaction.py` 是纯 Python 规则，`transport.py` 独立消费瞬时事件，`render.py` 使用 Qt 当前 FBO。

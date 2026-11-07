@@ -46,6 +46,7 @@ def main():
     old_pipeline = None
     stopped_at = None
     result = {"synthetic_only": args.demo, "camera_images_saved": False}
+    window.destroyed.connect(lambda: result.update(window_destroyed_before_app_exit=True))
 
     def poll():
         nonlocal phase, old_pipeline, stopped_at
@@ -79,10 +80,12 @@ def main():
     timer.timeout.connect(poll)
     timer.start(100)
     app.exec()
+    result["audio_disposed_before_app_exit"] = window.audio.closed and not window.audio.sounds
     result["final_workers_closed_cleanly"] = window.pipeline.closed_cleanly if window.pipeline else True
     suffix = "demo" if args.demo else "camera"
     (out / f"ui-smoke-{suffix}.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), "utf-8")
     assert "error" not in result, result
+    assert result.get("window_destroyed_before_app_exit") and result["audio_disposed_before_app_exit"]
     assert result["preview_closed_cleanly"] and result["scene_cleared"] and result["new_pipeline"]
     assert result["reopened_preview"]["pipeline_error"] is None and result["final_workers_closed_cleanly"]
     print(json.dumps({"case": suffix, "stop_seconds": result["stop_seconds"], "passed": True}))
