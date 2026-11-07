@@ -47,3 +47,9 @@ One Euro 采用公开论文的自适应低通公式自行实现，未复制候�
 来源为本会话「镜中取月_v0.3.1_Gemini前端与算法升级包 (1).zip」，SHA256：`ec0217d5998256036ac4f11b5bc6bbc6b2f242f89ad6ad1a025f45e08de7b96a`。八个文件先按字节覆盖并备份。相对已发布v0.3.1，render/star_ring/interaction/features完全相同；新增内容主要在stage.frag、app.py和guide.py，control.py则带回了上一轮修复前的148°/0.19秒。
 
 保留当前134°/0.24秒；修正着色器遮罩将无效区变成零距离导致整片发光、符文分隔带填满及四处逆序smoothstep；同步mirror_texture.py中的冻结图像映射/色彩/折镜雕纹，新增实际GL检查。新面板、花窗/铭文结构和配色予以保留。没有新增第三方贴图、音轨、字体或依赖，也不据文件名推断独立开源许可或仓库commit。
+
+## v0.4.0 原理参考
+
+本轮没有下载/复制第三方纹理、人物图片或Shader整段代码。新水球、射流、火焰和物理状态由本项目实现。水体折射、噪声分层与流体渲染原理参考NVIDIA GPU Gems 3第30章：https://developer.nvidia.com/gpugems/gpugems3/part-v-physics-simulation/chapter-30-real-time-simulation-and-rendering-3d-fluids ，水体焦散参考GPU Gems第2章：https://developer.nvidia.com/gpugems/gpugems/part-i-natural-effects/chapter-2-rendering-water-caustics 。没有声称把该章完整3D流体求解器集成进来。
+
+多Pose选项/输出语义参考Google官方：https://developers.google.com/edge/mediapipe/solutions/vision/pose_landmarker?tab=Python 。num_poses=2的原生加载不等于双人真人识别成功率已验证。既有库/模型/Qt/PyInstaller许可继续随包保留，无新付费API、服务或字体素材。

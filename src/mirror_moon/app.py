@@ -39,7 +39,7 @@ class Window(QMainWindow):
         super().__init__()
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
         self.args = args
-        self.setWindowTitle(f"镜中取月 · SPECULUM ASTRORUM v{__version__}")
+        self.setWindowTitle(f"镜中取月 · 动作魔法 v{__version__}")
         self.resize(1240, 860)
         self.setMinimumSize(1020, 720)
         self.pipeline = None
@@ -92,31 +92,33 @@ class Window(QMainWindow):
         title.setObjectName("title")
         header.addWidget(title)
 
-        subtitle = QLabel("SPECULUM ASTRORUM · 皇家星象仪与太虚魔镜")
+        subtitle = QLabel("让动作成为魔法 · 坐着也能操作")
         subtitle.setObjectName("romanSubtitle")
         header.addWidget(subtitle)
         header.addStretch()
 
-        spell_label = QLabel("✦ 秘法典籍")
+        spell_label = QLabel("法术")
         spell_label.setObjectName("goldSectionLabel")
         header.addWidget(spell_label)
         self.mode = QComboBox()
         for name, value in (
-            ("Ⅰ · 星环术 (Astrolabe)", "circle"),
+            ("星环术", "circle"),
             ("月刃术 (已封存)", "blade"),
-            ("Ⅱ · 镜界术 (Speculum)", "mirror"),
+            ("镜界术", "mirror"),
+            ("水球术", "water"),
+            ("掌心火焰", "fire"),
         ):
             self.mode.addItem(name, value)
         self.mode.view().setRowHidden(1, True)
         self.mode.setAccessibleName("施法系统")
 
-        elem_label = QLabel("✦ 星盘共鸣")
+        elem_label = QLabel("元素")
         elem_label.setObjectName("goldSectionLabel")
         header.addWidget(self.mode)
         header.addWidget(elem_label)
         self.element = QComboBox()
-        self.element.addItem("☽ 月华 (Lunar Sapphire)", "moon")
-        self.element.addItem("⚡ 雷霆 (Astral Amethyst)", "lightning")
+        self.element.addItem("月华", "moon")
+        self.element.addItem("雷霆", "lightning")
         self.element.setAccessibleName("法阵元素")
         header.addWidget(self.element)
         layout.addWidget(header_frame)
@@ -129,32 +131,32 @@ class Window(QMainWindow):
 
         self.source = QComboBox()
         for i in range(3):
-            self.source.addItem(f"✦ 魔镜视界 (摄像头 {i})", i)
+            self.source.addItem(f"摄像头 {i}", i)
         if args.camera not in range(3):
-            self.source.addItem(f"✦ 魔镜视界 (摄像头 {args.camera})", args.camera)
+            self.source.addItem(f"摄像头 {args.camera}", args.camera)
         self.source.setCurrentIndex(self.source.findData(args.camera))
         self.source.setAccessibleName("摄像头选择")
         source_row.addWidget(self.source)
 
-        self.start_button = QPushButton("✦ 开启魔镜")
+        self.start_button = QPushButton("打开摄像头")
         self.start_button.setObjectName("primary")
         self.start_button.clicked.connect(self.start_clicked)
         source_row.addWidget(self.start_button)
 
-        self.stop_button = QPushButton("封印视界 (C)")
+        self.stop_button = QPushButton("关闭摄像头 C")
         self.stop_button.clicked.connect(self.stop_preview)
         source_row.addWidget(self.stop_button)
 
-        video_button = QPushButton("载入影像卷轴")
+        video_button = QPushButton("打开视频回放")
         video_button.clicked.connect(self.open_video)
         source_row.addWidget(video_button)
 
-        self.pause_button = QPushButton("凝滞星轨")
+        self.pause_button = QPushButton("暂停")
         self.pause_button.clicked.connect(self.pause_clicked)
         source_row.addWidget(self.pause_button)
 
         source_row.addStretch()
-        self.source_label = QLabel("✦ 圣所结界：影像仅在本机推演")
+        self.source_label = QLabel("画面仅在本机处理")
         self.source_label.setObjectName("sourceLabel")
         source_row.addWidget(self.source_label)
         layout.addWidget(source_frame)
@@ -175,7 +177,7 @@ class Window(QMainWindow):
         hint_frame = FiligreePanel(corner_size=13.0, watermark=False)
         hint_layout = QHBoxLayout(hint_frame)
         hint_layout.setContentsMargins(18, 7, 18, 7)
-        self.hint = QLabel("开启魔镜视界，令双肩、双肘与双手映入星盘")
+        self.hint = QLabel("打开摄像头。坐着也能操作；水球和火焰只需手部入画")
         self.hint.setObjectName("hint")
         hint_layout.addWidget(self.hint)
         layout.addWidget(hint_frame)
@@ -185,7 +187,7 @@ class Window(QMainWindow):
         self.strength.setRange(0, 150)
         self.strength.setValue(0)
         self.strength.setTextVisible(True)
-        self.strength.setFormat("✦ 星盘魔力共鸣 0% ✦")
+        self.strength.setFormat("施法强度 0%")
         self.strength.setFixedHeight(22)
         layout.addWidget(self.strength)
 
@@ -196,34 +198,34 @@ class Window(QMainWindow):
         pedestal_layout.setSpacing(6)
 
         footer = QHBoxLayout()
-        self.status = QLabel("圣所待命")
+        self.status = QLabel("待机")
         self.status.setObjectName("statusText")
         self.status.setWordWrap(True)
         self.status.setMinimumWidth(0)
         footer.addWidget(self.status, 1)
 
-        self.calibrate_button = QPushButton("✦ 20 秒星盘调律")
+        self.calibrate_button = QPushButton("20秒校准")
         self.calibrate_button.clicked.connect(self.begin_calibration)
         footer.addWidget(self.calibrate_button)
 
         self.calibration_side = QComboBox()
-        self.calibration_side.addItem("调律右臂", "right")
-        self.calibration_side.addItem("调律左臂", "left")
+        self.calibration_side.addItem("右臂", "right")
+        self.calibration_side.addItem("左臂", "left")
         for i, side in enumerate(("right", "left")):
             self.calibration_side.setItemText(
-                i, ("右臂" if side == "right" else "左臂") + ("已调律" if side in self.profiles else "未调律")
+                i, ("右臂" if side == "right" else "左臂") + ("已校准" if side in self.profiles else "未校准")
             )
         footer.addWidget(self.calibration_side)
 
-        reset = QPushButton("散去法术 (Esc)")
+        reset = QPushButton("重置 Esc")
         reset.clicked.connect(self.cancel)
         footer.addWidget(reset)
 
-        screenshot = QPushButton("拓印星图 (截图)")
+        screenshot = QPushButton("截图")
         screenshot.clicked.connect(self.screenshot)
         footer.addWidget(screenshot)
 
-        full = QPushButton("全屏圣殿 (F11)")
+        full = QPushButton("全屏 F11")
         full.clicked.connect(self.fullscreen)
         footer.addWidget(full)
         pedestal_layout.addLayout(footer)
@@ -235,43 +237,43 @@ class Window(QMainWindow):
         self.quality.currentIndexChanged.connect(lambda i: setattr(self.data, "quality", i))
         settings.addWidget(self.quality)
 
-        settings.addWidget(QLabel("星辉强度"))
+        settings.addWidget(QLabel("特效亮度"))
         gain = QSlider(Qt.Orientation.Horizontal)
         gain.setRange(20, 150)
-        gain.setValue(115)
-        self.data.gain = 1.15
+        gain.setValue(75)
+        self.data.gain = 0.75
         gain.setMaximumWidth(130)
         gain.valueChanged.connect(lambda v: setattr(self.data, "gain", v / 100.0))
         settings.addWidget(gain)
 
-        self.mirror_check = QCheckBox("镜面映射")
+        self.mirror_check = QCheckBox("显示镜像")
         self.mirror_check.setChecked(True)
         self.mirror_check.toggled.connect(lambda v: setattr(self.data, "mirrored", v))
         settings.addWidget(self.mirror_check)
 
-        mute = QCheckBox("寂静结界")
+        mute = QCheckBox("静音")
         mute.toggled.connect(lambda v: setattr(self.audio, "muted", v))
         settings.addWidget(mute)
 
-        debug = QCheckBox("星轨诊断")
+        debug = QCheckBox("诊断")
         debug.toggled.connect(lambda v: setattr(self.data, "debug", v))
         settings.addWidget(debug)
 
-        self.record_button = QPushButton("铭刻星轨日志")
+        self.record_button = QPushButton("记录日志")
         self.record_button.clicked.connect(self.record_clicked)
         settings.addWidget(self.record_button)
 
-        logs = QPushButton("开启卷轴库")
+        logs = QPushButton("打开日志文件夹")
         logs.clicked.connect(self.open_logs)
         settings.addWidget(logs)
 
-        guide_check = QCheckBox("法典示范")
+        guide_check = QCheckBox("动作示范")
         guide_check.setChecked(True)
         guide_check.toggled.connect(self.guide.setVisible)
         settings.addWidget(guide_check)
 
         settings.addStretch()
-        settings.addWidget(QLabel("Esc 散功 · 空格 凝滞 · F11 圣殿"))
+        settings.addWidget(QLabel("Esc 重置 · 空格 暂停 · C 关闭摄像头"))
         pedestal_layout.addLayout(settings)
         layout.addWidget(pedestal_frame)
 
@@ -286,7 +288,7 @@ class Window(QMainWindow):
             lambda _: setattr(self.data, "element", self.element.currentData())
         )
         self.source.currentIndexChanged.connect(self.source_changed)
-        self.mode.setCurrentIndex({"circle": 0, "blade": 1, "mirror": 2}[args.mode])
+        self.mode.setCurrentIndex({"circle": 0, "blade": 1, "mirror": 2, "water": 3, "fire": 4}[args.mode])
         debug.setChecked(args.diagnostics)
         for key, callback in (
             ("Escape", self.cancel),
@@ -319,7 +321,7 @@ class Window(QMainWindow):
                 and watched is not self.stage
                 and not self.stage.isAncestorOf(watched)
             ):
-                self.pipeline.set_controls(suppress_until=time.perf_counter() + 0.65)
+                pass  # Manual UI controls must not freeze tracking or require lowered hands.
         return super().eventFilter(watched, event)
 
     def fallback(self, reason):
@@ -343,8 +345,8 @@ class Window(QMainWindow):
         if self.pipeline and not self.pipeline.stop_event.is_set():
             self.paused = False
             self.pipeline.set_controls(paused=False)
-            self.start_button.setText("✦ 星盘共鸣中")
-            self.pause_button.setText("凝滞星轨")
+            self.start_button.setText("运行中")
+            self.pause_button.setText("暂停")
         else:
             source = self.pipeline.source if self.pipeline else self.source.currentData()
             self.start_pipeline(source, auto=True)
@@ -371,8 +373,8 @@ class Window(QMainWindow):
         self.stopping_preview = False
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(True)
-        self.start_button.setText("✦ 开启魔镜")
-        self.status.setText("摄像头已关闭；需要时点击开启魔镜")
+        self.start_button.setText("打开摄像头")
+        self.status.setText("摄像头已关闭；点击打开摄像头重新开启")
         self.hint.setText("摄像头已关闭")
 
     def start_pipeline(self, source, auto=False):
@@ -402,7 +404,7 @@ class Window(QMainWindow):
             profiles=tuple((side, *pair) for side, pair in self.profiles.items()),
         )
         self.pipeline.start()
-        self.start_button.setText("✦ 开始施法" if self.paused else "✦ 星盘共鸣中")
+        self.start_button.setText("开始施法" if self.paused else "运行中")
         self.source_label.setText(
             "构造动作演示 · 非真人识别"
             if self.args.demo
@@ -420,7 +422,7 @@ class Window(QMainWindow):
         if self.recorder.file:
             path = self.recorder.path
             self.recorder.close()
-            self.record_button.setText("铭刻星轨日志")
+            self.record_button.setText("记录日志")
             self.status.setText(f"关键点日志已保存：{path}")
             self.last_record_path = path
         elif self.args.demo:
@@ -429,7 +431,7 @@ class Window(QMainWindow):
             target = user_dir() / "diagnostics" / (time.strftime("G0_%Y%m%d_%H%M%S") + ".jsonl")
             self.recorder.start(target)
             self.last_record_path = target
-            self.record_button.setText("停止铭刻日志")
+            self.record_button.setText("停止记录")
 
     def open_logs(self):
         directory = user_dir() / "diagnostics"
@@ -447,7 +449,7 @@ class Window(QMainWindow):
 
     def cancel(self):
         self.calibration = None
-        self.calibrate_button.setText("✦ 20 秒星盘调律")
+        self.calibrate_button.setText("20秒校准")
         self.reset_id += 1
         self.data.reset_effects()
         self.audio.stop()
@@ -459,7 +461,7 @@ class Window(QMainWindow):
             return
         self.paused = not self.paused
         self.data.reset_effects()
-        self.pause_button.setText("解除凝滞" if self.paused else "凝滞星轨")
+        self.pause_button.setText("解除凝滞" if self.paused else "暂停")
         if self.pipeline:
             self.pipeline.set_controls(paused=self.paused)
 
@@ -474,7 +476,7 @@ class Window(QMainWindow):
             or not self.data.scene
             or self.args.demo
         ):
-            self.hint.setText("先打开真实摄像头预览，再进行星盘调律")
+            self.hint.setText("先打开摄像头，再进行手臂校准")
             return
         self.cancel()
         self.calibration = {
@@ -484,21 +486,21 @@ class Window(QMainWindow):
             "extended": [],
         }
         self.pipeline.set_controls(paused=True)
-        self.calibrate_button.setText("Esc 取消调律")
+        self.calibrate_button.setText("Esc 取消校准")
 
     def calibration_tick(self, now, new_scene):
         calibration = self.calibration
         elapsed = now - calibration["start"]
         side_name = "左" if calibration["side"] == "left" else "右"
         instructions = [
-            "自然站定，令双肩与双肘映入魔镜",
+            "坐稳或站稳，让双肩和双肘入画",
             "抬起左手，保持清晰可见",
             "抬起右手，保持清晰可见",
             f"{side_name}臂自然弯曲，保持舒适",
             f"{side_name}臂朝前舒适伸直，不必锁死肘关节",
         ]
         stage = min(4, int(elapsed / 4))
-        self.hint.setText(f"星盘调律 {max(0, 20 - int(elapsed))} 秒：{instructions[stage]}")
+        self.hint.setText(f"手臂校准 {max(0, 20 - int(elapsed))} 秒：{instructions[stage]}")
         if new_scene and stage >= 3:
             arm = self.data.scene.features.arm(calibration["side"])
             if arm.angle is not None and arm.hand_valid and arm.tracked:
@@ -509,7 +511,7 @@ class Window(QMainWindow):
                 bent, extended = endpoints
                 self.profiles[calibration["side"]] = (bent, extended)
                 self.calibration_side.setItemText(
-                    self.calibration_side.findData(calibration["side"]), f"{side_name}臂已调律"
+                    self.calibration_side.findData(calibration["side"]), f"{side_name}臂已校准"
                 )
                 self.settings_path.write_text(
                     json.dumps(
@@ -526,13 +528,13 @@ class Window(QMainWindow):
                 self.pipeline.set_controls(
                     profiles=tuple((side, *pair) for side, pair in self.profiles.items())
                 )
-                self.hint.setText(f"✦ {side_name}臂星盘调律已铭刻；点击开始施法。")
+                self.hint.setText(f"✦ {side_name}臂校准已保存")
             else:
-                self.hint.setText("未取得足够弯伸样本，保留原星盘参数；可调整站位后重试")
+                self.hint.setText("弯伸样本不足，保留原校准；可调整坐姿后重试")
             self.calibration = None
-            self.calibrate_button.setText("✦ 20 秒星盘调律")
+            self.calibrate_button.setText("20秒校准")
             self.paused = True
-            self.start_button.setText("✦ 开始施法")
+            self.start_button.setText("开始施法")
 
     def tick(self):
         now = time.perf_counter()
@@ -551,11 +553,11 @@ class Window(QMainWindow):
                 if scene.features.valid:
                     self.valid_pose_stamps.append(scene.completed)
                 new_scene = True
-                self.hint.setText("预览中：调整站位后点击开始施法" if self.paused else scene.spell.hint)
+                self.hint.setText("预览中：确认画面后点击开始施法" if self.paused else scene.spell.hint)
                 self.strength.setValue(round(scene.spell.intensity * 100))
                 self.strength.setFormat(
-                    f"✦ 星盘魔力共鸣 {round(scene.spell.intensity * 100)}%"
-                    + (" · 【双臂过载解放】 ✦" if scene.spell.intensity > 1.0 else " ✦")
+                    f"施法强度 {round(scene.spell.intensity * 100)}%"
+                    + (" · 过载" if scene.spell.intensity > 1.0 else "")
                 )
                 self.strength.setStyleSheet(
                     "QProgressBar::chunk {background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #4c1d95, stop:0.5 #8b5cf6, stop:1 #f3e8ff);}"
@@ -571,7 +573,7 @@ class Window(QMainWindow):
                 "cross": "✦ 十字裂空已释放 ✦",
                 "shatter": "✦ 太虚镜界已崩碎定格 ✦",
                 "mirror_open": "✦ 太虚魔镜已展开 ✦",
-                "overdrive": "✦ 双臂过载共鸣已解放 (110–150%) ✦",
+                "overdrive": "过载施法 110–150%",
             }
             for event in events:
                 if event.kind in labels:
@@ -584,7 +586,7 @@ class Window(QMainWindow):
                 self.audio.update(self.data.scene.spell.intensity)
             else:
                 self.audio.update(0.0)
-                if age > 0.4:
+                if age > 0.4 and self.mode.currentData() not in ("water", "mirror"):
                     self.data.reset_effects()
                     from dataclasses import replace
 
@@ -595,11 +597,11 @@ class Window(QMainWindow):
             if self.pipeline.error:
                 status = f"识别未启动：{self.pipeline.error}"
                 self.hint.setText("识别未启动，不能施法。请查看下方完整错误，修复后点击重试。")
-                self.start_button.setText("重试魔镜")
+                self.start_button.setText("重试摄像头")
                 self.source_label.setText("摄像头/识别未就绪")
             ready = self.pipeline.error is None and not self.pipeline.stop_event.is_set()
             self.pause_button.setEnabled(ready)
-            self.calibrate_button.setEnabled(ready)
+            self.calibrate_button.setEnabled(ready and self.mode.currentData() == "circle")
             if self.data.scene:
                 status = f"{self.data.scene.features.reason or self.data.scene.spell.quality}    {status}"
             if self.audio.error():
@@ -849,7 +851,7 @@ def main():
     parser = argparse.ArgumentParser(description="镜中取月 · 本地动作 AR 舞台")
     parser.add_argument("--camera", type=int, default=0)
     parser.add_argument("--video")
-    parser.add_argument("--mode", choices=("circle", "blade", "mirror"), default="circle")
+    parser.add_argument("--mode", choices=("circle", "blade", "mirror", "water", "fire"), default="circle")
     parser.add_argument("--demo", action="store_true", help="构造动作演示，不能用作真人识别证据")
     parser.add_argument("--compat", action="store_true", help="QPainter 兼容画质")
     parser.add_argument("--autostart", action="store_true")

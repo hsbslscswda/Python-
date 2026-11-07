@@ -5,8 +5,10 @@ from dataclasses import replace
 
 from .config import DEFAULTS
 from .domain import Event, Shape, SpellView
+from .fire import Fire
 from .geometry import Hold, arm_lowered, blade_combo, distance, fitted_velocity, recent_samples
 from .star_ring import Circle
+from .water import Water
 
 
 class Blade:
@@ -202,23 +204,22 @@ class Mirror:
     def update(self, f):
         t, events = f.timestamp, []
         left, right = f.arms
-        visible = f.valid and all(a.hand_valid for a in f.arms)
+        visible = all(a.hand_valid and a.shape_age <= 0.18 for a in f.arms)
         for i, arm in enumerate(f.arms):
             if arm.hand_valid:
                 self.hand_seen[i] = t
-        prepared = visible and all(a.shape in (Shape.OPEN, Shape.OTHER) for a in f.arms)
+        prepared = visible and all(a.shape in (Shape.OPEN, Shape.OTHER, Shape.PINCH) for a in f.arms)
         bridge_limit = (
             max(0.85, self.cfg.mirror_geometry_bridge)
             if self.state in ("OPENING", "MANIPULATING", "FOLDING")
             else self.cfg.mirror_geometry_bridge
         )
-        geometry_ok = f.valid and all(
+        active_mirror = self.state in ("OPENING", "MANIPULATING", "FOLDING")
+        geometry_ok = all(
             a.hand_valid
             or (
-                a.tracked
-                and not arm_lowered(a, f)
-                and a.wrist_confidence >= 0.40
-                and t - self.hand_seen[i] <= bridge_limit
+                (a.upper_valid and self.hand_seen[i] > -1e8 and active_mirror)
+                or (a.tracked and a.wrist_confidence >= 0.40 and t - self.hand_seen[i] <= bridge_limit)
             )
             for i, a in enumerate(f.arms)
         )
@@ -246,9 +247,7 @@ class Mirror:
             if self.state == "IDLE":
                 if d > 0.65:
                     self.require_release = False
-                seed = (
-                    not self.require_release and 0.15 <= d <= 0.90 and distance(mid, f.chest) / f.scale < 0.95
-                )
+                seed = not self.require_release and 0.12 <= d <= 1.20
                 if self.hold.ready("seed", seed, t, self.cfg.mirror_seed):
                     self.transition("SEED", t)
                     self.seed_distance = d
@@ -340,8 +339,7 @@ class Mirror:
             self.close_candidate = None
             self.closing_peaks.clear()
             self.hold.ready("slow_close", False, t, self.cfg.mirror_close_hold)
-            if t - self.last_good > max(0.55, self.cfg.mirror_lost):
-                self.transition("CLOSING", t)
+            # Latched mirror: tracking loss is not a close gesture. Keep last geometry.
         if (not good and any(a.hand_valid and a.shape != Shape.OPEN for a in f.arms)) or all(
             arm_lowered(a, f) for a in f.arms
         ):
@@ -375,7 +373,7 @@ class Mirror:
             mirror_angle=self.angle,
             folded=self.state == "FOLDING",
             hint=hints[self.state],
-            quality="已识别" if good else "请让双手回到画面",
+            quality="按手部/手臂控制" if good else "镜面保持；手回到画面后继续控制",
         ), events
 
 
@@ -383,6 +381,7 @@ class Engine:
     def __init__(self, cfg=DEFAULTS):
         self.cfg = cfg
         self.circle, self.blade, self.mirror = Circle(cfg), Blade(cfg), Mirror(cfg)
+        self.water, self.fire = Water(cfg), Fire(cfg)
         self.mode = "circle"
         self.event_id = 0
         self.last_t = None
@@ -391,14 +390,15 @@ class Engine:
         self.neutral_hold = Hold()
         self.view = SpellView()
 
-    def reset(self, now=0.0):
+    def reset(self, now=0.0, require_neutral=False):
         bent, extended = self.circle.bent, self.circle.extended
         profiles = dict(self.circle.profiles)
         self.circle, self.blade, self.mirror = Circle(self.cfg), Blade(self.cfg), Mirror(self.cfg)
+        self.water, self.fire = Water(self.cfg), Fire(self.cfg)
         self.circle.bent, self.circle.extended = bent, extended
         self.circle.profiles = profiles
         self.neutral_until = now + self.cfg.neutral_hold
-        self.neutral_required = True
+        self.neutral_required = require_neutral
         self.neutral_hold.clear()
         self.view = SpellView(mode=self.mode)
 
@@ -406,9 +406,19 @@ class Engine:
         t = features.timestamp
         if self.last_t is not None and t == self.last_t:
             return self.view, ()
-        if self.last_t is not None and (t < self.last_t or t - self.last_t > self.cfg.max_gap):
-            self.reset(t)
+        if self.last_t is not None and (
+            t < self.last_t or (t - self.last_t > self.cfg.max_gap and self.mode == "blade")
+        ):
+            self.reset(t, require_neutral=self.mode == "blade")
+        elif self.last_t is not None and t - self.last_t > self.cfg.max_gap and self.mode == "circle":
+            self.circle.distances.clear()
+            self.circle.support_path.clear()
+            self.circle.approach_until = -1e9
         self.last_t = t
+        if paused and self.mode == "water" and not cancel and (mode is None or mode == self.mode):
+            self.water.pause(t)
+            self.view = replace(self.view, hint="已暂停；水球保留，继续后恢复")
+            return self.view, ()
         if cancel or (mode and mode != self.mode) or paused:
             self.mode = mode or self.mode
             self.reset(t)
@@ -422,7 +432,13 @@ class Engine:
                 self.view, mode=self.mode, hint="已暂停" if paused else "放松双手，准备下一次动作"
             )
             return self.view, ()
-        handler = {"circle": self.circle, "blade": self.blade, "mirror": self.mirror}[self.mode]
+        handler = {
+            "circle": self.circle,
+            "blade": self.blade,
+            "mirror": self.mirror,
+            "water": self.water,
+            "fire": self.fire,
+        }[self.mode]
         self.view, raw = handler.update(features)
         events = []
         for kind, points, strength in raw:

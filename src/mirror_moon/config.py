@@ -36,6 +36,20 @@ class Thresholds:
     mirror_geometry_bridge: float = 0.20
     control_hold: float = 0.35
     control_fade: float = 0.50
+    gesture_hold: float = 0.15
+    fire_unlock: float = 2.0
+    fire_loss_hold: float = 1.0
+    fire_loss_fade: float = 0.65
+    fire_palm_down: float = 0.45
+    gesture_max_age: float = 0.18
+    water_palm_offset: float = 0.05
+    water_grip_hold: float = 0.18
+    water_launch_speed: float = 4.5
+    water_spring: float = 65.0
+    water_damping: float = 13.0
+    water_gravity: float = 1.8
+    clap_distance: float = 0.24
+    clap_speed: float = 0.9
 
 
 DEFAULTS = Thresholds()

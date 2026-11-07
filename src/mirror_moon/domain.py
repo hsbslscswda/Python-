@@ -29,6 +29,11 @@ class Arm:
     shape_age: float = 0.0
     wrist_confidence: float = 1.0
     pose_wrist: Point | None = None
+    palm: Point | None = None
+    normal: Point3 | None = None
+    openness: float | None = None
+    palm_scale: float = 0.0
+    upper_valid: bool = False
 
     @property
     def source(self):
@@ -53,6 +58,7 @@ class Features:
     valid: bool = True
     reason: str = ""
     body_yaw: float | None = None
+    people: tuple = ()  # Other detected people: (left, top, right, bottom, shoulder_width).
 
     def arm(self, side: str) -> Arm:
         return self.arms[0 if side == "left" else 1]
@@ -88,3 +94,18 @@ class SpellView:
     hint: str = "一手握拳横在胸前，召唤星环"
     quality: str = "等待人物"
     control_reliable: bool = True
+    objects: tuple = ()
+
+
+@dataclass(frozen=True)
+class EffectObject:
+    """A projected, immutable effect bound to its tracking frame; depth is approximate."""
+
+    kind: int  # 1 water, 2 flying water, 3 splash, 4 flame
+    center: Point
+    radius: float
+    age: float = 0.0
+    opacity: float = 1.0
+    velocity: Point = (0.0, 0.0)
+    depth: float = 1.0
+    seed: float = 0.0

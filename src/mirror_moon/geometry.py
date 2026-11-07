@@ -118,5 +118,13 @@ def arm_lowered(arm, frame):
     return (
         arm.elbow_visible
         and arm.elbow[1] > arm.shoulder[1] + 0.16 * frame.scale
-        and arm.wrist[1] > frame.chest[1] + 0.65 * frame.scale
+        and (
+            arm.wrist[1] > frame.chest[1] + 0.65 * frame.scale
+            or (
+                not arm.hand_valid
+                and arm.upper_valid
+                and arm.elbow[1] > frame.chest[1] + 0.35 * frame.scale
+                and arm.wrist[1] >= arm.elbow[1] - 0.1 * frame.scale
+            )
+        )
     )

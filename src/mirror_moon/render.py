@@ -5,7 +5,7 @@ from dataclasses import replace
 
 import numpy as np
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QImage, QPainter, QPainterPath, QPen, QPolygonF
+from PySide6.QtGui import QBrush, QColor, QImage, QPainter, QPainterPath, QPen, QPolygonF, QRadialGradient
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtWidgets import QWidget
 
@@ -256,7 +256,7 @@ class GLStage(QOpenGLWidget):
                 "intensity": spell.intensity,
                 "migration": spell.migration,
                 "mirror_angle": spell.mirror_angle,
-                "mode": {"circle": 0, "blade": 1, "mirror": 2}[spell.mode],
+                "mode": {"circle": 0, "blade": 1, "mirror": 2, "water": 3, "fire": 4}[spell.mode],
                 "mirrored": int(d.mirrored),
                 "lightning": int(d.element == "lightning"),
                 "folded": int(spell.folded),
@@ -265,8 +265,23 @@ class GLStage(QOpenGLWidget):
                 "body_yaw": f.body_yaw or 0.0,
                 "mirror_time": f.timestamp % 4096,
             }
+            caster = f.arm(spell.caster) if spell.caster else f.arms[1]
+            aim = caster.normal or (
+                (caster.wrist[0] - caster.shoulder[0]) / max(1, f.scale) * 0.2,
+                -0.05,
+                -1.0,
+            )
+            values["cast_direction"] = aim
+            views = spell.objects[:12]
+            values["object_count"] = len(views)
             for name, value in values.items():
                 self.program[name].value = value
+            object_rows, motion_rows = np.zeros((12, 4), "f4"), np.zeros((12, 4), "f4")
+            for i, obj in enumerate(views):
+                object_rows[i] = (*obj.center, obj.radius, obj.opacity)
+                motion_rows[i] = (*obj.velocity, obj.age, obj.kind)
+            self.program["objects"].write(object_rows.tobytes())
+            self.program["object_motion"].write(motion_rows.tobytes())
             live = [e for e in d.slashes if started - e.timestamp < 0.80]
             d.slashes = live
             paths, params = np.zeros((8, 4), "f4"), np.zeros((8, 2), "f4")
@@ -291,7 +306,7 @@ class GLStage(QOpenGLWidget):
                 self.ctx.viewport = (0, 0, key[1], key[2])
                 self.scene_tex.use(2)
                 self.blur_tex_b.use(3)
-                self.compose_program["gain"].value = 0.3 if d.quality == 1 else 0.48
+                self.compose_program["gain"].value = 0.06 if d.quality == 1 else 0.10
                 self.compose_vao.render(moderngl.TRIANGLE_STRIP)
             event = d.shatter
             if event and started - event.timestamp < 0.85:
@@ -440,7 +455,7 @@ class PainterStage(QWidget):
             source_transform(p, d, self.width(), self.height())
             p.drawImage(0, 0, d.image)
             view = d.scene.spell
-            color = QColor("#abc4ff" if d.element == "lightning" else "#b1e3f9")
+            color = QColor("#ad8344")
             color.setAlphaF(min(1.0, view.visibility * d.gain))
             p.setPen(QPen(color, 3.5))
             p.setBrush(QColor(0, 0, 0, 0))
@@ -469,9 +484,19 @@ class PainterStage(QWidget):
                     )
                 if view.intensity:
                     wrist = d.scene.features.arm(view.caster).wrist
-                    for i in range(3 if view.migration > 0.5 else 1):
-                        r = 18 + 50 * view.intensity + i * 18
-                        p.drawEllipse(QPointF(wrist[0], wrist[1] - i * 18), r, r * 0.75)
+                    caster = d.scene.features.arm(view.caster)
+                    direction = (wrist[0] - caster.shoulder[0], wrist[1] - caster.shoulder[1])
+                    norm = max(1.0, math.hypot(*direction))
+                    end = (
+                        wrist[0] + direction[0] / norm * d.scene.features.scale * 3,
+                        wrist[1] + direction[1] / norm * d.scene.features.scale * 3,
+                    )
+                    beam = QColor("#8553da" if d.element == "lightning" else "#338fc4")
+                    beam.setAlphaF(0.6)
+                    p.setPen(QPen(beam, 8 + view.intensity * 14))
+                    p.drawLine(QPointF(*wrist), QPointF(*end))
+                    p.setPen(QPen(QColor("#71bfe5"), 3 + view.intensity * 3))
+                    p.drawLine(QPointF(*wrist), QPointF(*end))
             elif view.mode == "mirror" and view.visibility:
                 p.save()
                 p.translate(*view.center)
@@ -493,6 +518,8 @@ class PainterStage(QWidget):
                 p.drawImage(rect, qimage(self.mirror_patch))
                 p.drawRect(rect)
                 p.restore()
+            for obj in view.objects:
+                draw_object(p, obj, started)
             for e in d.slashes:
                 age = started - e.timestamp
                 if age < 0.80:
@@ -543,3 +570,46 @@ class PainterStage(QWidget):
 
     def shutdown(self):
         self.data.reset_effects()
+
+
+def draw_object(p, obj, now):
+    p.save()
+    p.setOpacity(obj.opacity)
+    x, y = obj.center
+    r = max(2.0, obj.radius)
+    p.setPen(Qt.PenStyle.NoPen)
+    if obj.kind in (1, 2):
+        grad = QRadialGradient(QPointF(x - r * 0.25, y - r * 0.3), r * 1.2)
+        grad.setColorAt(0, QColor(155, 217, 238, 200))
+        grad.setColorAt(0.25, QColor(20, 115, 165, 120))
+        grad.setColorAt(0.75, QColor(10, 72, 120, 180))
+        grad.setColorAt(1, QColor(75, 164, 190, 230))
+        p.setBrush(QBrush(grad))
+        p.drawEllipse(QPointF(x, y), r * (1 + 0.025 * math.sin(now * 5)), r)
+        p.setBrush(QColor(205, 240, 250, 190))
+        p.drawEllipse(QPointF(x - r * 0.30, y - r * 0.35), r * 0.16, r * 0.09)
+    elif obj.kind == 3:
+        fade = max(0.0, 1 - obj.age / 1.1)
+        p.setOpacity(obj.opacity * fade)
+        p.setBrush(QColor(72, 155, 200, 180))
+        for i in range(18):
+            a = i * 2.39996
+            p.drawEllipse(
+                QPointF(
+                    x + math.cos(a) * r * obj.age * 2, y + math.sin(a) * r * obj.age * 2 + obj.age**2 * r
+                ),
+                r * 0.035 * fade,
+                r * 0.055 * fade,
+            )
+    elif obj.kind == 4:
+        for i in range(4):
+            path = QPainterPath(QPointF(x - r * 0.6, y))
+            sway = math.sin(now * 7 + i) * r * 0.4
+            path.cubicTo(
+                x - r, y - r * 1.6, x + sway, y - r * (2.5 + i * 0.25), x + sway, y - r * (3 + i * 0.15)
+            )
+            path.cubicTo(x + r * 0.9, y - r * 1.7, x + r * 0.9, y - r * 0.5, x + r * 0.6, y)
+            path.closeSubpath()
+            p.setBrush(QColor(255, 80 + i * 33, 10, 100))
+            p.drawPath(path)
+    p.restore()

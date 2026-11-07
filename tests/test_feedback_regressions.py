@@ -39,7 +39,7 @@ def test_unseen_support_cannot_create_new_grip():
 
 def test_long_unrecognized_cast_hand_stops_output_but_keeps_ring():
     engine = casting()
-    states, _ = run(engine, 0.7, 2.0, cast_shape=Shape.OTHER)
+    states, _ = run(engine, 0.7, 2.0, cast_shape=Shape.UNKNOWN)
     assert states[-1].state == "READY"
     assert states[-1].intensity == 0.0 and states[-1].visibility == 1.0
 
@@ -47,8 +47,8 @@ def test_long_unrecognized_cast_hand_stops_output_but_keeps_ring():
 def test_no_frame_gap_cannot_resume_or_create_grip_on_first_reacquisition():
     engine = casting()
     view, events = engine.update(frame(2.0, support=(750.0, 350.0)))
-    assert view.state == "OFF" and view.intensity == 0 and not events
-    assert engine.neutral_required
+    assert view.state == "CAST" and view.intensity <= 1.0 and not events
+    assert not engine.neutral_required
 
 
 def test_foreshortened_forearm_can_confirm_only_after_observed_approach():

@@ -175,6 +175,7 @@ class FiligreePanel(QFrame):
 
 
 def _pose(mode, phase, sub_t):
+    mode = "mirror" if mode == "water" else "circle" if mode == "fire" else mode
     wave = 0.5 - 0.5 * math.cos(sub_t * math.tau)
     if mode == "circle":
         if phase == 0:
@@ -293,6 +294,10 @@ class PoseGuide(QWidget):
             "blade": ("Ⅰ · 收手蓄势", "Ⅱ · 破空挥斩", "Ⅲ · 回锋十字"),
             "mirror": ("Ⅰ · 胸前合手凝镜", "Ⅱ · 展臂旋天控镜", "Ⅲ · 折镜万象与崩碎"),
         }
+        titles.update(
+            water=("握拳后摊开召唤", "双手夹住并拉大", "搭腕发射，拍掌结束"),
+            fire=("张开后握拳2秒", "张开掌心点火", "翻掌或握拳熄灭"),
+        )
         subtitles = {
             "circle": (
                 "任意一手握拳置于胸前片刻，展开星象罗盘法阵",
@@ -310,11 +315,28 @@ class PoseGuide(QWidget):
                 "旋转镜面开启万花筒；向内快合双手触发碎镜定格",
             ),
         }
+        subtitles.update(
+            water=(
+                "任意角度握拳再摊开，水球出现在掌前；无需身体入画",
+                "双掌夹住水球，拉开可变大。移动时有惯性",
+                "另一手搭腕或前臂发射；只有拍掌才结束水球",
+            ),
+            fire=(
+                "先张开，再握拳满2秒解锁该手",
+                "再次张开点火，左右手可各有一团火焰",
+                "握拳时火焰收缩熄灭；翻掌朝下熄灭，张开可重燃",
+            ),
+        )
         tips = {
             "circle": "✦ 只要施法手不放下，移动身体不会中断施法\n✦ 铂金雕纹为星盘本体，星云流光为释放魔力\n✦ 放下施法手即可收阵归隐",
             "blade": "✦ 挥刀动作连贯即可\n✦ 切换法术时请先自然垂手半秒",
             "mirror": "✦ 双臂一上一下大角度旋转也不会中断\n✦ 自由缩放不关镜；合拢停住 0.3 秒平静收镜",
         }
+
+        tips.update(
+            water="水球持续保留，丢手不会消失。\n坐着可用；掌前距离与人物碰撞为单目近似。",
+            fire="只需识别手，不需要肩膀和站姿。\n短时掉点保持位置，不会被当作握拳。",
+        )
 
         # Engraved Chapter Ribbon
         p.setPen(QPen(QColor(214, 195, 156, 165), 1.15))
@@ -378,6 +400,14 @@ class PoseGuide(QWidget):
             cx, cy = _lerp_pt((130.0, 104.0), r_wr, min(1.0, sub_t * 2.0) if phase == 2 else 0.0)
             rad = (38.0 + 14.0 * wave) if phase == 1 else (50.0 if phase == 2 else 40.0)
             _draw_mini_astrolabe(p, cx, cy, rad, elapsed)
+        elif self.mode == "water":
+            p.setBrush(QColor(25, 130, 200, 145))
+            p.setPen(QPen(QColor("#80d4ec"), 2))
+            p.drawEllipse(QPointF(*r_wr), 22 + wave * 8, 23)
+        elif self.mode == "fire":
+            p.setBrush(QColor(255, 105, 20, 200))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawEllipse(QPointF(r_wr[0], r_wr[1] - 15), 12, 25 + wave * 10)
         elif self.mode == "mirror":
             mw = math.hypot(r_wr[0] - l_wr[0], r_wr[1] - l_wr[1])
             if mw > 24:

@@ -2,9 +2,29 @@
 
 import itertools
 import math
+from dataclasses import replace
 
 from .domain import Arm, Features, Shape
 from .geometry import OneEuro, angle3, distance
+
+
+def palm_geometry(hand, world, side):
+    if len(hand) != 21:
+        return {}
+    palm = tuple(sum(hand[i][axis] for i in (0, 5, 9, 13, 17)) / 5 for axis in (0, 1))
+    width = max(distance(hand[5], hand[17]), distance(hand[0], hand[9]) * 0.8)
+    coords = world if world and len(world) == 21 else tuple((*p, 0.0) for p in hand)
+    u = tuple(coords[5][i] - coords[0][i] for i in range(3))
+    v = tuple(coords[17][i] - coords[0][i] for i in range(3))
+    n = (u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0])
+    length = math.sqrt(sum(x * x for x in n))
+    sign = -1 if side == "left" else 1
+    normal = tuple(sign * x / length for x in n) if length > 1e-9 else None
+    extension = []
+    for base, tip in ((5, 8), (9, 12), (13, 16), (17, 20)):
+        ratio = math.dist(coords[tip], coords[0]) / max(1e-6, math.dist(coords[base], coords[0]))
+        extension.append(max(0.0, min(1.0, (ratio - 0.85) / 0.8)))
+    return dict(palm=palm, palm_scale=width, normal=normal, openness=sum(extension) / 4)
 
 
 def classify(points, previous=Shape.UNKNOWN, world=None):
@@ -44,6 +64,8 @@ class FeatureExtractor:
         self.last_scale = self.last_chest = self.reference_scale = self.reference_torso = None
         self.last_body = None
         self.last_yaw = 0.0
+        self.pose_anchor = None
+        self.arm_offsets = {}
 
     def extract(self, hands, pose, width, height, timestamp, frame_id):
         if self.last_t is not None and (timestamp - self.last_t > 0.5 or timestamp < self.last_t):
@@ -52,8 +74,37 @@ class FeatureExtractor:
             self.palm_sizes.clear()
             self.bones.clear()
         self.last_t = timestamp
-        points = pose.pose_landmarks[0] if pose.pose_landmarks else ()
-        world = pose.pose_world_landmarks[0] if pose.pose_world_landmarks else ()
+        sets = pose.pose_landmarks
+        worlds = pose.pose_world_landmarks
+        owner = 0
+        if sets:
+
+            def person_cost(ps):
+                anchor = ((ps[11].x + ps[12].x) * width / 2, (ps[11].y + ps[12].y) * height / 2)
+                return distance(anchor, self.pose_anchor or (width / 2, height / 2))
+
+            owner = min(range(len(sets)), key=lambda i: person_cost(sets[i]))
+            self.pose_anchor = (
+                (sets[owner][11].x + sets[owner][12].x) * width / 2,
+                (sets[owner][11].y + sets[owner][12].y) * height / 2,
+            )
+        points = sets[owner] if sets else ()
+        world = worlds[owner] if len(worlds) > owner else ()
+        people = []
+        for i, ps in enumerate(sets):
+            if i == owner:
+                continue
+            visible = [p for p in ps if min(p.visibility, p.presence) > 0.4]
+            if len(visible) >= 6:
+                people.append(
+                    (
+                        min(p.x for p in visible) * width,
+                        min(p.y for p in visible) * height,
+                        max(p.x for p in visible) * width,
+                        max(p.y for p in visible) * height,
+                        abs(ps[11].x - ps[12].x) * width,
+                    )
+                )
 
         def finite(i):
             return bool(points) and all(math.isfinite(getattr(points[i], axis)) for axis in ("x", "y", "z"))
@@ -132,6 +183,9 @@ class FeatureExtractor:
                 geometric = distance(hand[0], xy(wrist)) / scale * (0.55 + 0.45 * q)
             elif prior and age < 0.35:
                 geometric = distance(hand[0], prior[0]) / scale + 0.15
+            elif not valid:
+                category, _ = label(index)
+                geometric = 0.25 if category == side else 0.80
             else:
                 return 1.30
             continuity = 0.0
@@ -211,6 +265,12 @@ class FeatureExtractor:
             if not hand and shape_age <= 0.25:
                 shape = old_shape
             image_wrist = hand[0] if hand else xy(wrist)
+            upper_valid = reliable(shoulder, 0.40) and reliable(elbow, 0.45)
+            if upper_valid and (hand or reliable(wrist, 0.50)):
+                self.arm_offsets[side] = (image_wrist[0] - xy(elbow)[0], image_wrist[1] - xy(elbow)[1])
+            elif upper_valid and side in self.arm_offsets:
+                offset = self.arm_offsets[side]
+                image_wrist = (xy(elbow)[0] + offset[0], xy(elbow)[1] + offset[1])
             tracked = bool(hand) or (reliable(wrist, 0.50) and reliable(elbow, 0.40))
             other = right_id if side == "left" else left_id
             if not hand and other is not None and distance(xy(wrist), raw[other][0]) / scale < 0.12:
@@ -230,21 +290,25 @@ class FeatureExtractor:
                     angle = angle3(*coordinates)
                     self.bones[side] = tuple(0.92 * a + 0.08 * b for a, b in zip(previous, lengths))
             result.append(
-                Arm(
-                    side,
-                    xy(shoulder),
-                    xy(elbow),
-                    image_wrist,
-                    shape,
-                    tracked,
-                    bool(hand),
-                    angle,
-                    hand,
-                    q,
-                    reliable(elbow, 0.25),
-                    shape_age,
-                    confidence(wrist),
-                    xy(wrist),
+                replace(
+                    Arm(
+                        side,
+                        xy(shoulder),
+                        xy(elbow),
+                        image_wrist,
+                        shape,
+                        tracked,
+                        bool(hand),
+                        angle,
+                        hand,
+                        q,
+                        reliable(elbow, 0.25),
+                        shape_age,
+                        confidence(wrist),
+                        xy(wrist),
+                    ),
+                    **palm_geometry(hand, local_world, side),
+                    upper_valid=upper_valid,
                 )
             )
         yaw = None
@@ -259,4 +323,13 @@ class FeatureExtractor:
                 if abs(yaw) < 0.03:
                     yaw = 0.0
                 self.last_yaw = yaw
-        return Features(timestamp, frame_id, width, height, chest, scale, tuple(result), valid, reason, yaw)
+        if not valid and any(a.hand_valid for a in result):
+            reason = "仅手部识别：水球/火焰可用"
+            if self.last_body is None:
+                scale = max(
+                    50.0,
+                    sum(a.palm_scale for a in result if a.hand_valid) / sum(a.hand_valid for a in result) * 4,
+                )
+        return Features(
+            timestamp, frame_id, width, height, chest, scale, tuple(result), valid, reason, yaw, tuple(people)
+        )

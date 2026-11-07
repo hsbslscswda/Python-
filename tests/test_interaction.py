@@ -349,12 +349,12 @@ def test_duplicate_events_are_idempotent_at_journal_boundary():
     assert not journal.consume(0.0)
 
 
-def test_switch_does_not_rearm_until_actual_neutral_pose():
+def test_manual_switch_does_not_require_lowered_hands():
     engine = casting()
     engine.update(frame(0.7), mode="blade")
     for i in range(1, 50):
         view, _ = engine.update(frame(0.7 + i * 0.025))
-    assert engine.neutral_required and view.state == "OFF"
+    assert not engine.neutral_required and view.mode == "blade" and view.state == "IDLE"
     for i in range(1, 20):
         f = frame(2.0 + i * 0.025)
         f = replace(f, arms=tuple(replace(a, wrist=(a.wrist[0], 650.0), shape=Shape.OTHER) for a in f.arms))

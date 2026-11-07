@@ -8,6 +8,10 @@ uniform vec2 chest;
 uniform float shoulder;
 uniform float radius;
 uniform float body_yaw;
+uniform vec3 cast_direction;
+uniform int object_count;
+uniform vec4 objects[12];
+uniform vec4 object_motion[12];
 uniform float mirror_time;
 uniform float time;
 uniform float visibility;
@@ -242,12 +246,11 @@ void main() {
     vec3 base = camera(p);
     float sh = max(shoulder, 1.0);
 
-    // Refined Mystical Palette (Never garish yellow! Uses Moonlight Platinum-Champagne, Astral Cyan-Sapphire, and Amethyst-Starlight)
-    vec3 filigreeCol = lightning == 1 ? vec3(0.92, 0.76, 0.58) : vec3(0.86, 0.80, 0.68); // Brushed Champagne Silver-Brass
-    vec3 runeGlowCol = lightning == 1 ? vec3(1.00, 0.64, 0.92) : vec3(0.62, 0.92, 1.00); // Luminous Lilac-Rose vs Ice-Cyan Runes
-    vec3 spellMainCol = lightning == 1 ? vec3(0.62, 0.24, 1.00) : vec3(0.12, 0.72, 1.00); // Deep Astral Violet vs Celestial Azure
-    vec3 spellCoreCol = lightning == 1 ? vec3(1.00, 0.92, 0.78) : vec3(0.92, 0.98, 1.00); // Starlight Core
-
+    // Non-emissive warm metal is deliberately separate from the cold discharge.
+    vec3 filigreeCol = vec3(0.68, 0.48, 0.23);
+    vec3 runeGlowCol = vec3(0.86, 0.64, 0.32);
+    vec3 spellMainCol = lightning == 1 ? vec3(0.42, 0.12, 0.95) : vec3(0.02, 0.38, 0.82);
+    vec3 spellCoreCol = lightning == 1 ? vec3(0.72, 0.36, 1.0) : vec3(0.24, 0.72, 1.0);
     vec3 light = vec3(0.0);
 
     if (mode == 0 && visibility > 0.001) {
@@ -275,68 +278,55 @@ void main() {
         float rNorm = length(qMid) / max(r, 1.0);
         float diskMask = smoothstep(0.18, 0.45, rNorm) * (1.0 - smoothstep(0.96, 1.12, rNorm));
         float nebula = fbm(qMid / (sh * 0.35) + vec2(time * 0.18, -time * 0.12));
-        base *= 1.0 - diskMask * visibility * 0.54 * faceGuard;
-        light += spellMainCol * diskMask * nebula * 0.38 * (0.5 + 0.8 * intensity) * faceGuard * visibility;
+        base *= 1.0 - diskMask * visibility * 0.16 * faceGuard;
+        // Array remains a material, not another energy cloud.
 
         // Combine Brushed Champagne-Silver Filigree with Luminous Cyan/Violet Engraved Runes
-        vec3 backCol = filigreeCol * layerBack.x * 0.55 + spellMainCol * layerBack.y * 0.75;
-        vec3 midCol  = filigreeCol * layerMid.x  * 1.05 + runeGlowCol  * layerMid.y  * 1.35;
-        vec3 foreCol = mix(filigreeCol, spellCoreCol, 0.5) * layerFore.x * (0.85 + 0.75 * migration)
-                     + spellCoreCol * layerFore.y * (0.95 + 0.90 * migration);
+        float engraving = layerBack.x * 0.28 + layerMid.x * 0.42 + layerFore.x * 0.20;
+        float runes = layerBack.y * 0.18 + layerMid.y * 0.30 + layerFore.y * 0.14;
+        float mask = clamp((engraving + runes) * visibility * faceGuard, 0.0, 0.82);
+        vec3 metalColor = filigreeCol * (0.55 + 0.30 * sin(qMid.y * 0.03)) + runeGlowCol * min(runes, 0.45);
+        base = mix(base, metalColor, mask);
 
-        vec3 arrayLight = backCol + midCol + foreCol;
-        light += arrayLight * smoothstep(r * 0.08, r * 0.22, length(qMid)) * faceGuard * mix(0.68, 1.0, armPortal) * visibility * 1.18;
-
-        // Active Spell Discharge: Swirling Nebula Streams, Orbiting Star-Motes & Fractal Lightning
+        // A directed stream with travelling dense packets, wake and a narrow core.
+        // Forward-facing palms use a foreground-biased screen trajectory; depth is estimated.
         if (intensity > 0.002) {
-            vec2 ep = projectPlane(p - palm, tilt, 0.55, sh);
-            float d = length(ep) / sh;
-            float a = atan(ep.y, ep.x);
-
-            // Ethereal braided energy conduit between chest and palm
-            float conduitDist = lineDist(p, center, palm);
-            float braid = sin(length(p - center) * 0.12 - time * 9.0) * sh * 0.025;
-            float conduit = band(conduitDist + braid, sh * (0.028 + 0.035 * intensity)) * smoothstep(0.0, 0.2, intensity);
-            light += mix(spellMainCol, spellCoreCol, 0.45) * conduit * visibility * 1.45;
-
-            if (lightning == 0) {
-                // Organic FBM Nebula Vortex + Orbiting Starlight Motes
-                vec2 swirlUV = turn(d * 2.8 - time * (1.8 + intensity * 1.5)) * ep / (sh * 0.28);
-                float cloud = fbm(swirlUV + vec2(time * 0.6, -time * 0.4));
-                float spiralRibbon = smoothstep(0.32, 0.88, sin(a * 3.0 - d * 14.0 + time * 7.0 + cloud * 3.5)) * exp(-d * 1.45);
-                float nebulaAura = pow(cloud, 1.6) * exp(-d * 1.25) * 1.6;
-                float palmRing = sharpLine(d - 0.16 * (0.85 + 0.35 * intensity), 0.012) * 1.8 + band(d, 0.08) * 1.5;
-                light += (spellMainCol * (spiralRibbon + nebulaAura) * 1.55 + spellCoreCol * palmRing) * intensity * visibility * 1.45;
-            } else {
-                // Multi-branching Fractal Noise Plasma Arcs
-                float arcs = 0.0;
-                for (int k = 0; k < 6; k++) {
-                    float fk = float(k);
-                    float tSlot = floor(time * 14.0) + fk * 11.3;
-                    float baseAng = fk * (TAU / 6.0) + time * 0.7;
-                    float fbmJitter = (fbm(vec2(d * 6.5, tSlot * 0.37)) - 0.5) * 0.95;
-                    float microJitter = sin(d * 48.0 + tSlot * 5.1) * 0.08;
-                    float aDiff = abs(mod(a - baseAng + fbmJitter + microJitter + PI, TAU) - PI);
-                    arcs += sharpLine(aDiff * d, 0.008 + 0.006 * intensity) * exp(-d * 1.15);
+            vec2 aim = cast_direction.xy;
+            if (length(aim) < 0.20) aim = (palm - chest) / sh + vec2(0.0, -0.12);
+            aim = normalize(aim + vec2(0.001));
+            vec2 normal = vec2(-aim.y, aim.x);
+            vec2 delta = p - palm;
+            float along = dot(delta, aim);
+            float across = dot(delta, normal);
+            float reach = sh * (3.2 + migration);
+            if (along >= -sh * 0.10 && along < reach) {
+                float u = clamp(along / reach, 0.0, 1.0);
+                float width = sh * (0.035 + 0.065 * intensity + migration * 0.08) * (1.0 + u * 0.55);
+                float turbulence = (fbm(vec2(along/sh*4.0-time*6.0, across/sh*5.0)) - 0.5) * width;
+                float core = band(across + turbulence * 0.25, width * 0.30);
+                float sheath = band(across + turbulence, width);
+                float packets = pow(max(0.0, cos(u * 35.0 - time * 18.0)), 12.0);
+                float envelope = smoothstep(-sh*0.1, sh*0.12, along) * (1.0-smoothstep(0.80, 1.0, u));
+                light += (spellMainCol * sheath * 0.65 + spellCoreCol * core * (0.7 + packets*1.5)) * envelope * intensity * visibility;
+                if (migration > 0.05) {
+                    float flank = abs(across) - width * (1.5 + 0.18*sin(along/sh*9.0-time*8.0));
+                    light += spellMainCol * band(flank, width*0.23) * envelope * migration * 0.9;
                 }
-                float palmCore = band(d - 0.10, 0.028) * 2.2 + band(d, 0.07) * 1.7;
-                light += (spellMainCol * arcs * 1.8 + spellCoreCol * (arcs * 0.95 + palmCore)) * intensity * visibility * 1.55;
+                for (int k=0; k<4; k++) {
+                    float head = fract(time*1.5+float(k)*0.25)*reach;
+                    float dx = (along-head)/max(1.0, sh*0.17);
+                    float dy = across/max(1.0, width*0.7);
+                    float packet = exp(-dx*dx-dy*dy);
+                    light += spellCoreCol * packet * envelope * intensity * 0.8;
+                }
             }
         }
 
-        // Overdrive (110%-150%): Celestial Eclipse Singularity + Reality-Refracting Shockwave
         if (migration > 0.02) {
-            float wave = fract(time * 1.05);
-            float shockR = r * (0.10 + wave * 1.25);
-            float shockBand = band(length(qFore) - shockR, 6.0) * (1.0 - wave) * migration;
-            if (quality > 0) {
-                vec2 dir = normalize(qFore + vec2(0.001));
-                base = mix(base, camera(p + dir * shockBand * sh * 0.055), clamp(migration, 0.0, 1.0));
-            }
-            float eclipseCore = (1.0 - smoothstep(r * 0.08, r * 0.24, length(qFore))) * migration * clamp(intensity, 0.5, 1.5);
-            base *= 1.0 - eclipseCore * 0.88;
-            float corona = sharpLine(length(qFore) - r * 0.18, max(2.2, sh * 0.018)) * migration * 2.4;
-            light += (spellCoreCol * corona + runeGlowCol * shockBand * 2.2) * visibility;
+            float wave = fract(time * 0.8);
+            float shockR = r * (0.15 + wave * 0.85);
+            float shock = band(length(qFore)-shockR, 2.0) * (1.0-wave) * migration;
+            light += spellMainCol * shock * 0.28 * visibility;
         }
     } else if (mode == 1 && visibility > 0.001) {
         vec2 q = p - center;
@@ -425,9 +415,76 @@ void main() {
         light += vec3(0.55, 0.88, 1.0) * riftMask * 1.4;
     }
 
-    if (quality > 0) light += min(light, vec3(0.65)) * 0.24;
-    vec3 finalLight = light * effect_gain;
-    vec3 softLight = vec3(1.0) - exp(-finalLight * 0.72);
-    color = vec4(base + (vec3(1.0) - base * 0.72) * softLight, 1.0);
-    emission = vec4(max(softLight - vec3(0.36), vec3(0.0)), 1.0);
+    // Bounded object list: persistent water, ballistic water, splashes and per-hand flame.
+    for (int i=0; i<12; i++) {
+        if (i >= object_count) break;
+        vec2 c = objects[i].xy;
+        float r = max(2.0, objects[i].z), opacity=objects[i].w;
+        vec2 velocity=object_motion[i].xy;
+        float age=object_motion[i].z;
+        int kind=int(object_motion[i].w+0.5);
+        vec2 q=(p-c)/r;
+        if (kind == 1 || kind == 2) {
+            float a=atan(q.y,q.x);
+            float wobble=0.025*sin(a*5.0+time*3.5)+0.018*sin(a*9.0-time*5.0);
+            vec2 v=q/(1.0+wobble);
+            float d=length(v);
+            if(d<1.0) {
+                vec3 n=vec3(v,sqrt(max(0.0,1.0-dot(v,v))));
+                vec2 offset=n.xy*r*(0.16+0.12*n.z);
+                vec3 refracted=camera(p+offset)*vec3(0.65,0.90,1.0);
+                float fresnel=pow(1.0-n.z,3.0);
+                float spec=pow(max(0.0,dot(n,normalize(vec3(-0.4,-0.6,0.9)))),70.0);
+                float caustic=pow(max(0.0,sin(v.x*17.0+sin(v.y*13.0+time*2.5)+time*1.8)),14.0)*(1.0-n.z*0.5);
+                float diffuse=max(0.0,dot(n,normalize(vec3(-0.45,-0.65,0.9))));
+                vec3 sky=mix(vec3(0.025,0.08,0.14),vec3(0.22,0.52,0.68),clamp(0.5-n.y*0.6,0.0,1.0));
+                vec3 water=refracted*0.72+sky*(0.25+fresnel*0.50)+vec3(0.05,0.16,0.23)*diffuse+vec3(0.75,0.90,0.98)*spec+vec3(0.04,0.10,0.13)*caustic;
+                base=mix(base,water,opacity*(1.0-smoothstep(0.94,1.0,d))*0.92);
+            }
+            if(kind==2) {
+                vec2 dir=normalize(velocity+vec2(0.001));
+                float tail=max(0.0,-dot(q,dir));
+                float side=abs(q.x*dir.y-q.y*dir.x);
+                float trail=exp(-side*side*12.0-tail*1.7)*step(0.2,tail)*step(tail,4.0);
+                base=mix(base,vec3(0.08,0.38,0.56),trail*0.35*opacity);
+            }
+        } else if(kind==3) {
+            float fade=max(0.0,1.0-age/1.1);
+            for(int j=0;j<18;j++) {
+                float fj=float(j), a=fj*2.39996;
+                vec2 pos=vec2(cos(a),sin(a))*(0.15+age*(1.2+fract(fj*0.37)))+vec2(0.0,age*age*0.85);
+                float size=(0.03+fract(fj*0.27)*0.05)*fade;
+                float drop=1.0-smoothstep(size*0.5,size,length(q-pos));
+                base=mix(base,vec3(0.22,0.57,0.76),drop*fade*0.75);
+                light+=vec3(0.12,0.28,0.32)*drop*fade*0.2;
+            }
+            float ring=band(length(q)-(0.2+age*1.8),0.025)*fade;
+            base=mix(base,vec3(0.16,0.38,0.50),ring*0.35);
+        } else if(kind==4) {
+            vec2 uvf=q;
+            float height=-uvf.y;
+            if(height> -0.2 && height<3.8 && abs(uvf.x)<1.5) {
+                float n=fbm(vec2(uvf.x*3.8,height*2.4-time*5.0));
+                float width=(0.88-height*0.20)*(0.65+0.7*n);
+                float sway=sin(height*2.4-time*6.0)*0.12*height;
+                float body=1.0-smoothstep(width*0.35,width,abs(uvf.x+sway));
+                float tongues=1.0-smoothstep(2.0+n*1.6,3.8,height);
+                float density=body*tongues*smoothstep(-0.2,0.1,height);
+                float hot=pow(clamp(1.0-height/3.0,0.0,1.0),1.4)*body;
+                vec3 flame=mix(vec3(0.80,0.08,0.005),vec3(1.0,0.62,0.08),hot);
+                base=mix(base,flame,density*opacity*0.86);
+                light+=vec3(0.35,0.08,0.005)*density*opacity*0.35;
+            }
+            for(int j=0;j<6;j++) {
+                float u=fract(time*(0.5+float(j)*0.04)+float(j)*0.17);
+                vec2 pos=vec2(sin(float(j)*8.1+u*4.0)*u*0.9,-u*4.5);
+                float ember=band(length(q-pos),0.018)*(1.0-u);
+                light+=vec3(0.7,0.22,0.01)*ember*opacity;
+            }
+        }
+    }
+    vec3 finalLight = max(vec3(0.0),light) * effect_gain;
+    vec3 softLight = finalLight/(vec3(1.0)+finalLight);
+    color = vec4(base + (vec3(1.0)-base)*softLight,1.0);
+    emission = vec4(max(softLight-vec3(0.70),vec3(0.0))*0.25,1.0);
 }

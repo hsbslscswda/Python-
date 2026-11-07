@@ -58,7 +58,7 @@ class Tracker:
                 vision.PoseLandmarkerOptions(
                     base_options=base(model_asset_buffer=self.model_buffers["pose_landmarker_lite.task"]),
                     running_mode=vision.RunningMode.VIDEO,
-                    num_poses=1,
+                    num_poses=2,
                 )
             )
         except Exception:

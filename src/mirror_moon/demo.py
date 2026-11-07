@@ -45,7 +45,51 @@ def sample(elapsed, now, frame_id, mode="circle"):
     )
     from dataclasses import replace
 
-    if mode == "blade":
+    if mode == "water":
+        phase = elapsed % 10.0
+        rw = (830.0 + 30 * math.sin(phase * 2), 340.0)
+        lw = (420.0, 340.0)
+        shape = Shape.FIST if 0.45 < phase < 0.95 else Shape.OPEN
+        normal_left = normal_right = (0.0, 0.0, -1.0)
+        if 2.5 < phase < 3.6:
+            lw = (710.0, 340.0)
+            normal_left, normal_right = (1.0, 0.0, 0.0), (-1.0, 0.0, 0.0)
+        elif 3.6 <= phase < 4.8:
+            lw = (790.0, 340.0)
+        elif 7.0 < phase < 7.5:
+            gap = max(10.0, 180.0 - (phase - 7) * 650)
+            lw, rw = (640 - gap, 340.0), (640 + gap, 340.0)
+            normal_left, normal_right = (1.0, 0.0, 0.0), (-1.0, 0.0, 0.0)
+        arms = (
+            replace(
+                arms[0],
+                wrist=lw,
+                palm=lw,
+                shape=Shape.OPEN,
+                normal=normal_left,
+                palm_scale=60,
+                upper_valid=True,
+            ),
+            replace(
+                arms[1], wrist=rw, palm=rw, shape=shape, normal=normal_right, palm_scale=60, upper_valid=True
+            ),
+        )
+    elif mode == "fire":
+        phase = elapsed % 10.0
+        shape = Shape.FIST if 0.9 < phase < 3.15 or 7.0 < phase < 7.5 else Shape.OPEN
+        arms = tuple(
+            replace(
+                a,
+                wrist=(500.0 + i * 280, 440.0),
+                palm=(500.0 + i * 280, 440.0),
+                shape=shape,
+                openness=0.0 if shape == Shape.FIST else 1.0,
+                palm_scale=65,
+                normal=(0.0, 1.0 if 7.5 < phase < 8.0 else -1.0, 0.0),
+            )
+            for i, a in enumerate(arms)
+        )
+    elif mode == "blade":
         phase = elapsed % 4.0
         p = min(1.0, max(0.0, (phase - 0.7) / 0.38))
         wrist = (525.0 + 450.0 * p, 270.0 - 90.0 * math.sin(p * math.pi))
@@ -78,7 +122,10 @@ def sample(elapsed, now, frame_id, mode="circle"):
         )
     if mode == "mirror" and 7.8 < elapsed % 12.0 < 8.6:
         arms = tuple(replace(a, wrist=(a.wrist[0], 600.0), shape=Shape.OTHER) for a in arms)
-    if elapsed % (16.0 if mode == "circle" else 4.0 if mode == "blade" else 12.0) < 0.45:
+    if (
+        mode in ("circle", "blade", "mirror")
+        and elapsed % (16.0 if mode == "circle" else 4.0 if mode == "blade" else 12.0) < 0.45
+    ):
         arms = tuple(replace(a, wrist=(a.wrist[0], 600.0), shape=Shape.OTHER) for a in arms)
     # Asymmetric chart and a silhouette make orientation, channel and aspect errors visible.
     cv2.putText(rgb, "L  /  SYNTHETIC STAGE", (40, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (160, 190, 210), 1)

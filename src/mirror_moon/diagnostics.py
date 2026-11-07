@@ -67,6 +67,7 @@ class Recorder:
 def decode_features(value):
     value = dict(value)
     value["chest"] = tuple(value["chest"])
+    value["people"] = tuple(tuple(p) for p in value.get("people", ()))
     arms = []
     for a in value["arms"]:
         a = dict(a)
@@ -75,6 +76,9 @@ def decode_features(value):
             a[key] = tuple(a[key])
         if a.get("pose_wrist") is not None:
             a["pose_wrist"] = tuple(a["pose_wrist"])
+        for key in ("palm", "normal"):
+            if a.get(key) is not None:
+                a[key] = tuple(a[key])
         a["landmarks"] = tuple(tuple(p) for p in a["landmarks"])
         a["shape"] = Shape(a["shape"])
         arms.append(Arm(**a))

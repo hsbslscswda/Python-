@@ -66,6 +66,8 @@ def main():
         ("demo", ["--demo", "--quit-after", "5"]),
         ("camera", ["--autostart", "--quit-after", "6"]),
         ("compat-mirror", ["--demo", "--compat", "--mode", "mirror", "--quit-after", "12"]),
+        ("water", ["--demo", "--mode", "water", "--quit-after", "9"]),
+        ("fire", ["--demo", "--mode", "fire", "--quit-after", "6"]),
         ("invalid-camera", ["--autostart", "--camera", "99", "--quit-after", "4"]),
     ]
     for name, arguments in cases:
@@ -95,6 +97,13 @@ def main():
             ), value
         if name == "compat-mirror":
             assert value["pipeline_error"] is None and value["events_emitted"].get("shatter", 0) > 0, value
+        if name == "water":
+            assert all(
+                value["events_emitted"].get(key, 0) > 0
+                for key in ("water_open", "water_launch", "water_hit", "water_close")
+            ), value
+        if name == "fire":
+            assert value["events_emitted"].get("ignite", 0) >= 2 and "BURNING" in value["seen_states"], value
         if name == "invalid-camera":
             assert "无法打开" in (value["pipeline_error"] or ""), value
         results.append(

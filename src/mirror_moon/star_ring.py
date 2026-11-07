@@ -41,7 +41,17 @@ class Circle:
         # No fixed elbow angle and no requirement to cross the forearm horizontally.
         dx = abs(arm.wrist[0] - f.chest[0]) / max(1.0, f.scale)
         dy = (arm.wrist[1] - f.chest[1]) / max(1.0, f.scale)
-        return arm.hand_valid and arm.shape == Shape.FIST and dx < 0.95 and -0.75 < dy < 0.80
+        horizontal = abs(arm.wrist[1] - arm.elbow[1]) < 0.55 * f.scale
+        return (
+            (
+                arm.hand_valid
+                and arm.shape in (Shape.FIST, Shape.PINCH)
+                or horizontal
+                and (arm.hand_valid or arm.upper_valid and arm.wrist_confidence >= 0.55)
+            )
+            and dx < 1.60
+            and (-1.40 < dy < 0.95 or (horizontal and -1.9 < dy < 1.2))
+        )
 
     def update(self, f):
         t, s = f.timestamp, max(1.0, f.scale)
@@ -54,7 +64,7 @@ class Circle:
             self.support = self.caster = None
             self.session_started = False
             self.intensity = 0.0
-            for arm in f.arms:
+            for arm in sorted(f.arms, key=lambda a: a.shape not in (Shape.FIST, Shape.PINCH)):
                 if self.hold.ready(arm.side, f.valid and self.chest_fist(arm, f), t, self.cfg.summon_hold):
                     self.support = arm.side
                     self.caster = "right" if arm.side == "left" else "left"
@@ -73,10 +83,13 @@ class Circle:
                 self.last_support_hand = t
             if caster.hand_valid:
                 self.last_caster_hand = t
-            if caster.tracked and f.valid:
+            if (caster.tracked or caster.upper_valid) and f.valid:
                 self.last_caster = t
             observed_open = (
-                f.valid and caster.hand_valid and caster.shape == Shape.OPEN and self.raised(caster, f)
+                f.valid
+                and caster.hand_valid
+                and caster.shape in (Shape.OPEN, Shape.OTHER, Shape.PINCH)
+                and self.raised(caster, f)
             )
             if observed_open:
                 self.last_open = t
@@ -129,15 +142,12 @@ class Circle:
             is_extended_arm = (caster.angle is not None and caster.angle > 115.0) or (
                 distance(caster.elbow, caster.wrist) / s < 0.42
             )
-            along_ok = (
-                -0.15 <= along <= 1.32
-                or (
-                    is_extended_arm
-                    and (
-                        d_wrist / s < self.cfg.grip_enter * 1.20
-                        or distance(support.wrist, caster.elbow) / s < self.cfg.grip_enter * 1.20
-                        or 0.15 <= along_upper <= 1.05
-                    )
+            along_ok = -0.15 <= along <= 1.32 or (
+                is_extended_arm
+                and (
+                    d_wrist / s < self.cfg.grip_enter * 1.20
+                    or distance(support.wrist, caster.elbow) / s < self.cfg.grip_enter * 1.20
+                    or 0.15 <= along_upper <= 1.05
                 )
             )
             near = (
@@ -163,8 +173,7 @@ class Circle:
                 else:
                     support_lost = self.hold.ready("support_lost", not support.tracked, t, 0.30)
                     outside = support.tracked and (
-                        d > self.cfg.grip_exit * 1.15
-                        or (not is_extended_arm and not -0.20 <= along <= 1.40)
+                        d > self.cfg.grip_exit * 1.15 or (not is_extended_arm and not -0.20 <= along <= 1.40)
                     )
                     detached = self.hold.ready("detach", outside, t, 0.22)
                     if detached or support_lost:
@@ -180,9 +189,9 @@ class Circle:
                 normal = control.update(angle, t, *endpoints)
                 reliable = control.reliable
                 if (
-                    self.state in ("TRANSFER", "OVERDRIVE")
+                    self.state in ("CAST", "TRANSFER", "OVERDRIVE", "RETURN")
                     and not caster.hand_valid
-                    and caster.tracked
+                    and (caster.tracked or caster.upper_valid)
                     and self.raised(caster, f)
                 ):
                     self.last_open = max(self.last_open, t - 0.30)
@@ -222,7 +231,7 @@ class Circle:
             m = smoothstep(self.migration)
             center = tuple(a + (b - a) * m for a, b in zip(center, palm))
         hints = {
-            "OFF": "一手在胸前或肩前松握拳，即可召唤星环；肘角不限",
+            "OFF": "一手松握拳横放身前；胸前或颈前都可以，不要求90度",
             "SUMMONING": "古星盘展开中…",
             "READY": "另一手张开抬起开始施法；握拳停法，放下施法手收阵",
             "CAST": "施法中：伸臂增强，召唤手搭在施法前臂或手腕上可突破 100%",
