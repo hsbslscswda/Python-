@@ -330,3 +330,130 @@ def test_water_pause_freezes_instead_of_ending_and_fire_reset_clears():
     e.mode = "fire"
     e.update(hand_frame(102), paused=True)
     assert not e.fire.hands["left"].unlocked
+
+
+def test_water_lowered_support_does_not_resize_or_end_session():
+    w = water_ball()
+    for i in range(6):
+        f = hand_frame(0.6 + i * 0.05, valid=True)
+        a = replace(f.arms[0], palm=(450, 300), wrist=(450, 300), normal=(1, 0, 0), upper_valid=True)
+        b = replace(f.arms[1], palm=(620, 300), wrist=(620, 300), normal=(-1, 0, 0), upper_valid=True)
+        w.update(replace(f, arms=(a, b)))
+    locked_radius = w.radius
+    for i in range(1, 10):
+        f = hand_frame(0.9 + i * 0.05, valid=True)
+        a = replace(f.arms[0], palm=(450, 300), wrist=(450, 300), normal=(1, 0, 0), upper_valid=True)
+        b = replace(
+            f.arms[1],
+            shoulder=(620, 200),
+            palm=(620, 640),
+            wrist=(620, 640),
+            elbow=(620, 420),
+            normal=(-1, 0, 0),
+            upper_valid=True,
+        )
+        w.update(replace(f, arms=(a, b)))
+    assert abs(w.radius - locked_radius) < 0.015
+    assert w.enabled and not w.shots
+
+
+def test_water_wrist_tap_with_perpendicular_normal_launches():
+    w = water_ball()
+    for i, x in enumerate((650, 500, 495, 495, 495)):
+        f = hand_frame(0.6 + i * 0.06, valid=True)
+        a = replace(f.arms[0], wrist=(480, 300), palm=(480, 300), normal=(0, 0, -1), upper_valid=True)
+        b = replace(f.arms[1], wrist=(x, 300), palm=(x, 300), normal=(-1, 0, 0), upper_valid=True)
+        _, events = w.update(replace(f, arms=(a, b)))
+    assert w.shots
+
+
+def test_fire_short_dropout_preserves_two_second_fist_unlock():
+    fire = Fire()
+    fire.update(hand_frame(0))
+    for i in range(1, 28):
+        fire.update(hand_frame(i * 0.05, Shape.FIST, None))
+    fire.update(hand_frame(1.45, None, None))
+    fire.update(hand_frame(1.50, None, None))
+    for i in range(31, 48):
+        fire.update(hand_frame(i * 0.05, Shape.FIST, None))
+    assert fire.hands["left"].unlocked
+
+
+def test_mirror_lowered_arms_without_hands_preserves_session():
+    e = open_mirror()
+    for i in range(1, 10):
+        f = mirror_frame(0.85 + i * 0.05, 1.5, both=False)
+        arms = tuple(
+            replace(
+                a,
+                hand_valid=False,
+                upper_valid=True,
+                elbow=(a.shoulder[0], 390.0),
+                wrist=(a.shoulder[0], 640.0),
+            )
+            for a in f.arms
+        )
+        view, _ = e.update(replace(f, valid=True, arms=arms))
+    assert view.state not in ("CLOSING", "SHATTER", "IDLE")
+    assert view.visibility == 1 and not _
+
+
+def test_water_body_only_lowered_arms_cannot_end_session():
+    w = water_ball()
+    for i in range(12):
+        f = hand_frame(0.6 + i * 0.1, None, None, valid=True)
+        arms = tuple(
+            replace(
+                a,
+                shoulder=(a.wrist[0], 200),
+                elbow=(a.wrist[0], 420),
+                wrist=(a.wrist[0], 640),
+                upper_valid=True,
+            )
+            for a in f.arms
+        )
+        view, events = w.update(replace(f, arms=arms))
+        assert w.enabled and view.visibility == 1 and not events
+
+
+def test_water_owner_loss_does_not_transfer_ball_to_other_hand():
+    w = water_ball()
+    view, events = w.update(hand_frame(0.6, None, Shape.OPEN))
+    assert w.owner == view.caster == "left" and not events
+
+
+def test_water_single_hand_fast_move_is_not_an_unrequested_launch_gesture():
+    w = water_ball()
+    for t, x in [(0.8, 450), (1.0, 450), (1.05, 900), (1.10, 450)]:
+        f = hand_frame(t, Shape.OPEN, None, normal=(0, 0, -1))
+        a = replace(f.arms[0], palm=(x, 300), wrist=(x, 300))
+        _, events = w.update(replace(f, arms=(a, f.arms[1])))
+        assert not w.shots and not events
+
+
+def test_water_slow_opposed_palms_do_not_launch_instead_of_resizing():
+    w = water_ball()
+    spans = list(range(160, 49, -10)) + [50] * 6
+    for i, span in enumerate(spans):
+        f = hand_frame(0.6 + i * 0.1)
+        a = replace(f.arms[0], palm=(450, 300), wrist=(450, 300), normal=(1, 0, 0))
+        b = replace(f.arms[1], palm=(450 + span, 300), wrist=(450 + span, 300), normal=(-1, 0, 0))
+        _, events = w.update(replace(f, arms=(a, b)))
+        assert not w.shots and not events and w.enabled
+
+
+@pytest.mark.parametrize("unknown", [None, Shape.UNKNOWN])
+def test_fire_unlock_pauses_uncertain_samples_without_counting_recovery_gap(unknown):
+    fire = Fire()
+    fire.update(hand_frame(0))
+    for i in range(1, 11):
+        fire.update(hand_frame(i * 0.1, Shape.FIST, None))
+    fire.update(hand_frame(1.1, unknown, None))
+    fire.update(hand_frame(1.2, unknown, None))
+    for i in range(11):
+        _, events = fire.update(hand_frame(1.25 + i * 0.1, Shape.FIST, None))
+        assert not fire.hands["left"].unlocked and not events
+    _, events = fire.update(hand_frame(2.35, Shape.FIST, None))
+    assert fire.hands["left"].unlocked and [e[0] for e in events] == ["fire_unlock"]
+    _, events = fire.update(hand_frame(2.45, Shape.FIST, None))
+    assert not events

@@ -1,6 +1,6 @@
 # 镜中取月工程接续
 
-开始工作先读 docs/HANDOFF.md、docs/WORKFLOW.md、docs/DECISIONS.md 和 docs/VALIDATION.md 的最新版本段。HANDOFF 是当前状态入口；SPEC 中“v0.4.0 本轮用户变更优先”高于初始规划。
+开始工作先读 docs/HANDOFF.md、docs/WORKFLOW.md、docs/DECISIONS.md 和 docs/VALIDATION.md 的最新版本段。HANDOFF是当前状态入口；SPEC末尾已确认的用户要求高于候选升级包和初始规划，v0.4.1视觉升级不推翻v0.4.0的持续施法/显式结束规则。
 
 这是持续迭代项目。Codex 承担主要实现和默认唯一集成职责；Gemini 提供独立审查、视觉建议与边界明确的候选；用户负责转交材料及真实摄像头动作/视觉反馈。固定流程见 docs/WORKFLOW.md，不能把接续缩成一次文件核对。
 
@@ -9,5 +9,7 @@
 每轮由 Codex 整理可运行版本、最短自测、固定基线审查包及最多三个问题的提示词。用户不负责手工组织源码、找日志或裁决能由代码和测试解决的争议。诊断时主动从 %LOCALAPPDATA%/MirrorMoon/diagnostics 定位和分析，只向用户询问动作时段与现象；个人录像和原始动作日志不默认公开。
 
 发布前核对授权、代码标识、现有release ID和附件摘要。匹配附件保留，只完成缺失步骤；不重建相同版本或重传一致附件。v0.4.0复用release ID 437538423；旧 local/incoming-v040/publish.py 有 untagged 草稿匹配风险，不能盲目运行。
+
+新版本使用独立版本号、包体和发布ID，不能拿v0.4.0专用发布脚本处理v0.4.1。Gemini包的测试数量或“真实3D/精确厘米/终极”等描述不是本机证据；须核对GL实际渲染而非悄然回退兼容画质，以及冻结镜面/碎片采样的一致性。
 
 每轮更新HANDOFF：最新需求、运行/审查版本、实际路径、验证边界、发布与Gemini进度、用户待办与工程下一步。运行版本与文档提交分别记录，不移动已发布版本标签收纳后续文档。

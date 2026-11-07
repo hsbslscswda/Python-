@@ -329,7 +329,12 @@ class Mirror:
                     else:
                         self.fold_anchor = None
             if self.state not in ("CLOSING", "SHATTER"):
-                k = 1.0 - math.exp(-max(0.0, dt) * 28.0)
+                near_border = any(
+                    w[0] < 42.0 or w[0] > f.width - 42.0 or w[1] < 42.0 or w[1] > f.height - 42.0
+                    for w in (left.wrist, right.wrist)
+                )
+                rate = 9.0 if (near_border or not visible) else 28.0
+                k = 1.0 - math.exp(-max(0.0, dt) * rate)
                 self.center = tuple(a + (b - a) * k for a, b in zip(self.center if self.size else mid, mid))
                 target_size = max(0.14, d * 0.55) * f.scale
                 self.size += (target_size - self.size) * k if self.size else target_size

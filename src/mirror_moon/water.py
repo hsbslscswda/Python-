@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from .config import DEFAULTS
 from .domain import EffectObject, Shape, SpellView
-from .geometry import Hold, distance, segment_distance
+from .geometry import Hold, arm_lowered, distance, segment_distance
 
 
 def fresh(a):
@@ -86,6 +86,8 @@ class Water:
         self.recall_at = self.grip_cooldown = -1e9
         self.grip_far, self.seed = False, 0
         self.scaling = False
+        self.pinch_span = None
+        self.pinch_base_radius = 0.075
         self.hand_seen = {"left": -1e9, "right": -1e9}
         self.last_projection = (0.0, 0.0)
 
@@ -103,6 +105,7 @@ class Water:
         self.grip_cooldown += delta
         self.hold.clear()
         self.grip_far = False
+        self.pinch_span = None
         self.clap.previous = None
         self.clap.approach_until = -1e9
 
@@ -130,6 +133,7 @@ class Water:
         if self.last_t is not None and t - self.last_t > 0.5:
             self.hold.clear()
             self.grip_far = False
+            self.pinch_span = None
             self.clap.previous = None
         self.last_t = t
         for arm in f.arms:
@@ -141,6 +145,7 @@ class Water:
             self.splashes.clear()
             self.fists.clear()
             self.hold.clear()
+            self.pinch_span = None
             return SpellView(mode="water", state="OFF", hint="水球已拍散；握拳再摊开重新召唤"), [
                 ("water_close", (), 0.0)
             ]
@@ -160,12 +165,23 @@ class Water:
                     self.radius = 0.075
                     self.position, self.velocity = self.target(a, f), [0.0] * 3
                     self.radius, self.grip_far = 0.075, False
+                    self.pinch_span = None
+                    self.pinch_base_radius = 0.075
                     self.recall_at = -1e9
                     events.append(("water_open", (a.palm or a.wrist,), 1.0))
                     break
         if not self.enabled:
+            self.splashes = [s for s in self.splashes if t - s[0] < 1.05][-8:]
+            splash_objs = tuple(
+                EffectObject(3, center, radius, t - stamp, seed=seed)
+                for stamp, center, radius, seed in self.splashes
+            )
             return SpellView(
-                mode="water", state="OFF", hint="任意一手握拳后摊开，召唤水球；坐着也可以"
+                mode="water",
+                state="OFF",
+                visibility=1.0 if splash_objs else 0.0,
+                objects=splash_objs,
+                hint="任意一手握拳后摊开，召唤水球；坐着也可以",
             ), events
         a, b = f.arm(self.owner), f.arm("right" if self.owner == "left" else "left")
         target = self.target(a, f) if fresh(a) else list(self.position)
@@ -176,31 +192,59 @@ class Water:
         def available(arm):
             return fresh(arm) or (arm.upper_valid and f.valid and t - self.hand_seen[arm.side] < 0.8)
 
-        if held and available(a) and available(b):
+        # Resize only from two currently observed palms; a clearly lowered support
+        # stops resizing without ending the water session. Diagonal holds remain valid.
+        second_hand_scaling_ok = (
+            held
+            and fresh(a)
+            and fresh(b)
+            and all(hand.shape in (Shape.OPEN, Shape.OTHER, Shape.PINCH) for hand in (a, b))
+            and not (f.valid and arm_lowered(b, f))
+        )
+        if second_hand_scaling_ok:
             pa, pb = a.palm or a.wrist, b.palm or b.wrist
             spacing = distance(pa, pb)
             midpoint = ((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2)
-            # Capture the ball between palms, then let separation control its radius.
-            if spacing > self.radius * scale * 0.7 and distance(midpoint, center) < max(
-                self.radius * scale * 1.8, f.scale * 0.45
+            if spacing > max(self.radius * scale * 0.7, f.scale * 0.26) and distance(midpoint, center) < max(
+                self.radius * scale * 1.45, f.scale * 0.45
             ):
+                if self.pinch_span is None:
+                    self.pinch_span = max(spacing, 36.0)
+                    self.pinch_base_radius = self.radius
                 tb = self.target(b, f)
                 target = [(x + y) / 2 for x, y in zip(target, tb)]
-                desired = max(0.05, min(0.60, spacing / scale * 0.48))
+                ratio_desired = self.pinch_base_radius * (spacing / self.pinch_span)
+                abs_desired = spacing / scale * 0.48
+                desired = max(
+                    0.05,
+                    min(
+                        0.60, max(ratio_desired, abs_desired) if spacing >= self.pinch_span else ratio_desired
+                    ),
+                )
                 self.radius += (desired - self.radius) * (1 - math.exp(-dt * 6))
                 self.scaling = True
+            else:
+                self.pinch_span = None
+        else:
+            self.pinch_span = None
+
+        if held and available(a) and available(b):
+            pa, pb = a.palm or a.wrist, b.palm or b.wrist
             d = (
                 segment_distance(b.wrist, a.elbow, a.wrist)[0]
                 if a.upper_valid or a.tracked
                 else distance(pa, pb)
             )
             d = min(d, distance(pa, pb)) / max(1.0, f.scale)
-            if d > 0.55:
+            if d > 0.42:
                 self.grip_far = True
-            parallel = (
-                a.normal is None or b.normal is None or sum(x * y for x, y in zip(a.normal, b.normal)) > -0.15
+            # Only block wrist-tap launch when hands are separated & actively opposed for two-hand resize
+            actively_opposed_resize = (
+                a.normal is not None
+                and b.normal is not None
+                and sum(x * y for x, y in zip(a.normal, b.normal)) < -0.35
             )
-            grip = self.grip_far and d < 0.28 and parallel and t > self.grip_cooldown
+            grip = self.grip_far and d < 0.34 and not actively_opposed_resize and t > self.grip_cooldown
             if self.hold.ready("launch", grip, t, self.cfg.water_grip_hold):
                 normal = a.normal or (0.0, 0.0, -1.0)
                 n = math.sqrt(sum(x * x for x in normal)) or 1.0
@@ -210,7 +254,7 @@ class Water:
                 self.seed += 1
                 self.shots.append(Shot(list(self.position), velocity, self.radius, t, self.seed))
                 self.shots = self.shots[-8:]
-                self.recall_at, self.grip_cooldown, self.grip_far = t + 0.85, t + 1.2, False
+                self.recall_at, self.grip_cooldown, self.grip_far = t + 0.85, t + 1.0, False
                 self.hold.ready("launch", False, t, self.cfg.water_grip_hold)
                 events.append(("water_launch", (center,), 1.0))
                 held = False
@@ -218,6 +262,7 @@ class Water:
             self.hold.ready("launch", False, t, self.cfg.water_grip_hold)
             if not available(a) or not available(b):
                 self.grip_far = False
+
         previous_positions = {id(shot): list(shot.position) for shot in self.shots}
         steps = max(1, math.ceil(dt / (1 / 90)))
         step = dt / steps

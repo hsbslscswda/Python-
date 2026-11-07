@@ -10,7 +10,7 @@ from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtWidgets import QWidget
 
 from .geometry import OneEuro
-from .mirror_texture import mirror_texture
+from .mirror_texture import MIRROR_ASPECT, MIRROR_OUTLINE, mirror_cells, mirror_texture
 from .resources import root
 
 
@@ -20,30 +20,20 @@ def qimage(rgb):
 
 
 def shard_mesh(event, size):
-    """A bounded pre-cut triangle mesh. UVs retain the mirror's frozen camera content."""
+    """A bounded fan triangulation of irregular Voronoi cells, sampling frozen content."""
     center, (radius, angle) = event.points[:2]
     rng = np.random.default_rng(event.seed)
     rotation = np.array([[math.cos(angle), -math.sin(angle)], [math.sin(angle), math.cos(angle)]])
     out = []
-    for y in range(6):
-        for x in range(10):
-            corners = np.array(
-                [
-                    (x / 5 - 1.0, y / 3 - 1.0),
-                    ((x + 1) / 5 - 1.0, y / 3 - 1.0),
-                    ((x + 1) / 5 - 1.0, (y + 1) / 3 - 1.0),
-                    (x / 5 - 1.0, (y + 1) / 3 - 1.0),
-                ]
-            )
-            corners *= (radius, radius * 0.66)
-            for ids in ((0, 1, 2), (0, 2, 3)):
-                local = corners[list(ids)]
-                centroid = local.mean(axis=0)
-                velocity = centroid * 0.9 + rng.normal(0.0, 40.0, 2)
-                for p in local:
-                    world = np.asarray(center) + rotation @ p
-                    sample = p / np.array((radius * 2, radius * 1.32)) + 0.5
-                    out.append((*world, *sample, *velocity))
+    for polygon in mirror_cells(event.seed):
+        midpoint = polygon.mean(axis=0)
+        velocity = midpoint * (radius * 0.9) + rng.normal(0.0, 40.0, 2)
+        for i in range(len(polygon)):
+            for q in (midpoint, polygon[i], polygon[(i + 1) % len(polygon)]):
+                local = q * np.array((radius, radius * MIRROR_ASPECT))
+                world = np.asarray(center) + rotation @ local
+                sample = q * 0.5 + 0.5
+                out.append((*world, *sample, *velocity))
     return np.asarray(out, dtype="f4")
 
 
@@ -166,23 +156,23 @@ class GLStage(QOpenGLWidget):
             self.ctx.gc_mode = "auto"
             directory = root() / "assets"
             self.program = self.ctx.program(
-                vertex_shader=(directory / "stage.vert").read_text(),
-                fragment_shader=(directory / "stage.frag").read_text(),
+                vertex_shader=(directory / "stage.vert").read_text(encoding="utf-8"),
+                fragment_shader=(directory / "stage.frag").read_text(encoding="utf-8"),
             )
             vertices = np.array([-1, -1, 0, 1, 1, -1, 1, 1, -1, 1, 0, 0, 1, 1, 1, 0], dtype="f4")
             self.vbo = self.ctx.buffer(vertices.tobytes())
             self.vao = self.ctx.vertex_array(self.program, [(self.vbo, "2f 2f", "in_position", "in_uv")])
             self.shard_program = self.ctx.program(
-                vertex_shader=(directory / "shards.vert").read_text(),
-                fragment_shader=(directory / "shards.frag").read_text(),
+                vertex_shader=(directory / "shards.vert").read_text(encoding="utf-8"),
+                fragment_shader=(directory / "shards.frag").read_text(encoding="utf-8"),
             )
             self.blur_program = self.ctx.program(
-                vertex_shader=(directory / "stage.vert").read_text(),
-                fragment_shader=(directory / "blur.frag").read_text(),
+                vertex_shader=(directory / "stage.vert").read_text(encoding="utf-8"),
+                fragment_shader=(directory / "blur.frag").read_text(encoding="utf-8"),
             )
             self.compose_program = self.ctx.program(
-                vertex_shader=(directory / "stage.vert").read_text(),
-                fragment_shader=(directory / "compose.frag").read_text(),
+                vertex_shader=(directory / "stage.vert").read_text(encoding="utf-8"),
+                fragment_shader=(directory / "compose.frag").read_text(encoding="utf-8"),
             )
             self.blur_vao = self.ctx.vertex_array(
                 self.blur_program, [(self.vbo, "2f 2f", "in_position", "in_uv")]
@@ -264,14 +254,19 @@ class GLStage(QOpenGLWidget):
                 "quality": d.quality,
                 "body_yaw": f.body_yaw or 0.0,
                 "mirror_time": f.timestamp % 4096,
+                "mirror_closing": int(spell.state == "CLOSING"),
             }
             caster = f.arm(spell.caster) if spell.caster else f.arms[1]
-            aim = caster.normal or (
-                (caster.wrist[0] - caster.shoulder[0]) / max(1, f.scale) * 0.2,
-                -0.05,
-                -1.0,
-            )
-            values["cast_direction"] = aim
+            arm_dx = (caster.wrist[0] - caster.shoulder[0]) / max(40.0, f.scale)
+            arm_dy = (caster.wrist[1] - caster.shoulder[1]) / max(40.0, f.scale)
+            yaw_val = f.body_yaw or 0.0
+            nx = math.sin(yaw_val) * 0.65 + max(-1.15, min(1.15, arm_dx * 0.55))
+            ny = max(-0.65, min(0.65, arm_dy * 0.38 - 0.04))
+            if caster.normal is not None:
+                nx = nx * 0.72 + caster.normal[0] * 0.28
+                ny = ny * 0.78 + caster.normal[1] * 0.22
+            nz = -math.sqrt(max(0.08, 1.0 - min(0.92, nx * nx + ny * ny)))
+            values["cast_direction"] = (nx, ny, nz)
             views = spell.objects[:12]
             values["object_count"] = len(views)
             for name, value in values.items():
@@ -502,7 +497,12 @@ class PainterStage(QWidget):
                 p.translate(*view.center)
                 p.rotate(math.degrees(view.mirror_angle))
                 p.setOpacity(view.visibility)
-                rect = QRectF(-view.radius, -view.radius * 0.66, view.radius * 2, view.radius * 1.32)
+                rect = QRectF(
+                    -view.radius,
+                    -view.radius * MIRROR_ASPECT,
+                    view.radius * 2,
+                    view.radius * 2 * MIRROR_ASPECT,
+                )
                 key = (d.scene.features.frame_id, view.center, view.radius, view.mirror_angle, view.folded)
                 if self.mirror_patch_key != key:
                     self.mirror_patch = mirror_texture(
@@ -515,8 +515,19 @@ class PainterStage(QWidget):
                         d.scene.features.timestamp,
                     )
                     self.mirror_patch_key = key
+                outline = QPainterPath()
+                outline.addPolygon(
+                    QPolygonF(
+                        [QPointF(x * view.radius, y * view.radius * MIRROR_ASPECT) for x, y in MIRROR_OUTLINE]
+                    )
+                )
+                outline.closeSubpath()
+                p.save()
+                p.setClipPath(outline)
                 p.drawImage(rect, qimage(self.mirror_patch))
-                p.drawRect(rect)
+                p.restore()
+                p.setPen(QPen(QColor("#d7c7a4"), 2))
+                p.drawPath(outline)
                 p.restore()
             for obj in view.objects:
                 draw_object(p, obj, started)

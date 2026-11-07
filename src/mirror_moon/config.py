@@ -38,6 +38,7 @@ class Thresholds:
     control_fade: float = 0.50
     gesture_hold: float = 0.15
     fire_unlock: float = 2.0
+    fire_unlock_dropout: float = 0.28
     fire_loss_hold: float = 1.0
     fire_loss_fade: float = 0.65
     fire_palm_down: float = 0.45

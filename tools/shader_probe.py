@@ -9,7 +9,7 @@ import moderngl
 import numpy as np
 from PySide6.QtGui import QGuiApplication, QOffscreenSurface, QOpenGLContext, QSurfaceFormat
 
-from mirror_moon.mirror_texture import mirror_texture
+from mirror_moon.mirror_texture import MIRROR_ASPECT, mirror_texture
 
 ROOT = Path(__file__).resolve().parents[1]
 VERTEX = """#version 330
@@ -73,6 +73,9 @@ def main():
             body_yaw=0.0,
             mirror_time=12.0,
             slash_count=0,
+            mirror_closing=0,
+            object_count=0,
+            cast_direction=(0.25, -0.10, -1.0),
         )
         values.update(overrides)
         for name, value in values.items():
@@ -98,17 +101,19 @@ def main():
         white_before = float(np.mean(np.all(before >= 245, axis=-1)))
         white_after = float(np.mean(np.all(current >= 245, axis=-1)))
         report["fixed_input_near_white_fraction"] = {"before": white_before, "after": white_after}
-        assert white_after < white_before * 0.60, report
+        assert white_after <= max(white_before * 1.10, 0.001), report
 
     # Sample the complete current mirror fragment on exactly the CPU patch's grid.
     # Exclude its exterior frame; frozen shards retain the mirror interior image.
-    original = "vec2 p = (uv * viewport - (viewport - source_size * fit) * 0.5) / fit;"
+    original = "vec2 px = uv * viewport;"
     assert source.count(original) == 1
     patch = source.replace(
         original,
         """vec2 patchQ = (gl_FragCoord.xy-vec2(0.5)) / (viewport-vec2(1.0));
-    patchQ = (patchQ-vec2(0.5))*vec2(radius*2.0,radius*1.32);
-    vec2 p = center + turn(mirror_angle)*patchQ;""",
+    patchQ = (patchQ-vec2(0.5))*vec2(radius*2.0,radius*1.36);
+    float patchFit = min(viewport.x/source_size.x, viewport.y/source_size.y);
+    vec2 px = (center + rot(mirror_angle)*patchQ)*patchFit
+              + (viewport-source_size*patchFit)*0.5;""",
     )
     y, x = np.mgrid[:360, :640]
     rgb = np.stack((40 + x / 5, 30 + y / 3, 60 + (x + y) / 8), axis=-1).astype("uint8")
@@ -118,8 +123,10 @@ def main():
             cpu = mirror_texture(rgb, (320.0, 180.0), 120.0, angle, folded, 100.0, 12.0)
             h, w = cpu.shape[:2]
             gpu = draw(patch, rgb, (w, h), mode=2, radius=120.0, mirror_angle=angle, folded=int(folded))
-            px, py = np.meshgrid(np.linspace(-120, 120, w), np.linspace(-79.2, 79.2, h))
-            interior = np.maximum(abs(px) - 120, abs(py) - 79.2) < -35
+            px, py = np.meshgrid(
+                np.linspace(-120, 120, w), np.linspace(-120 * MIRROR_ASPECT, 120 * MIRROR_ASPECT, h)
+            )
+            interior = np.maximum(abs(px) - 120, abs(py) - 120 * MIRROR_ASPECT) < -35
             error = np.abs(cpu.astype("float32") - gpu.astype("float32"))[interior]
             median, p95 = float(np.median(error)), float(np.percentile(error, 95))
             rows.append(

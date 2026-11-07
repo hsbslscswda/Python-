@@ -14,6 +14,9 @@ class Flame:
         self.size = 0.0
         self.born = 0.0
         self.opacity = 0.0
+        self.unlock_seconds = 0.0
+        self.last_fist_seen = -1e9
+        self.previous_fist = False
 
 
 class Fire:
@@ -24,9 +27,12 @@ class Fire:
 
     def update(self, f):
         t, objects, events = f.timestamp, [], []
-        if self.last_t is not None and t - self.last_t > 0.35:
+        dt = max(0.0, t - self.last_t) if self.last_t is not None else 0.0
+        if self.last_t is not None and dt > self.cfg.max_gap:
             for flame in self.hands.values():
                 flame.hold.clear()
+                flame.unlock_seconds = 0.0
+                flame.previous_fist = False
         self.last_t = t
         charging = 0
         for arm in f.arms:
@@ -38,13 +44,24 @@ class Fire:
             if opened:
                 flame.saw_open = True
             if not flame.unlocked:
-                if flame.hold.ready("unlock", flame.saw_open and fist, t, self.cfg.fire_unlock):
-                    flame.unlocked = True
-                    events.append(("fire_unlock", (), 1.0))
                 if fist and flame.saw_open:
+                    if flame.previous_fist:
+                        flame.unlock_seconds += dt
+                    elif t - flame.last_fist_seen > self.cfg.fire_unlock_dropout:
+                        flame.unlock_seconds = 0.0
+                    flame.last_fist_seen = t
+                    flame.previous_fist = True
                     charging += 1
-                if not fresh:
-                    flame.hold.ready("unlock", False, t, self.cfg.fire_unlock)
+                    if flame.unlock_seconds + 1e-9 >= self.cfg.fire_unlock:
+                        flame.unlocked = True
+                        events.append(("fire_unlock", (), 1.0))
+                else:
+                    flame.previous_fist = False
+                    uncertain = not fresh or arm.shape == Shape.UNKNOWN
+                    if not uncertain or t - flame.last_fist_seen > self.cfg.fire_unlock_dropout:
+                        flame.unlock_seconds = 0.0
+                    elif flame.unlock_seconds > 0:
+                        charging += 1
             # Palm normal is inferred from this hand's own landmarks, never Pose world subtraction.
             down = fresh and arm.normal is not None and arm.normal[1] > self.cfg.fire_palm_down
             if flame.hold.ready("down", down, t, self.cfg.gesture_hold) or flame.hold.ready(
