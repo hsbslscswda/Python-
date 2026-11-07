@@ -112,27 +112,44 @@ def main():
         """vec2 patchQ = (gl_FragCoord.xy-vec2(0.5)) / (viewport-vec2(1.0));
     patchQ = (patchQ-vec2(0.5))*vec2(radius*2.0,radius*1.36);
     float patchFit = min(viewport.x/source_size.x, viewport.y/source_size.y);
-    vec2 px = (center + rot(mirror_angle)*patchQ)*patchFit
-              + (viewport-source_size*patchFit)*0.5;""",
+    vec2 rawPoint = center + rot(-mirror_angle)*patchQ;
+    if (mirrored == 1) rawPoint.x = source_size.x - rawPoint.x;
+    vec2 px = rawPoint*patchFit + (viewport-source_size*patchFit)*0.5;""",
     )
     y, x = np.mgrid[:360, :640]
     rgb = np.stack((40 + x / 5, 30 + y / 3, 60 + (x + y) / 8), axis=-1).astype("uint8")
     rows = []
-    for folded in (False, True):
-        for angle in (0.0, 0.8):
-            cpu = mirror_texture(rgb, (320.0, 180.0), 120.0, angle, folded, 100.0, 12.0)
-            h, w = cpu.shape[:2]
-            gpu = draw(patch, rgb, (w, h), mode=2, radius=120.0, mirror_angle=angle, folded=int(folded))
-            px, py = np.meshgrid(
-                np.linspace(-120, 120, w), np.linspace(-120 * MIRROR_ASPECT, 120 * MIRROR_ASPECT, h)
-            )
-            interior = np.maximum(abs(px) - 120, abs(py) - 120 * MIRROR_ASPECT) < -35
-            error = np.abs(cpu.astype("float32") - gpu.astype("float32"))[interior]
-            median, p95 = float(np.median(error)), float(np.percentile(error, 95))
-            rows.append(
-                {"folded": folded, "angle": angle, "channel_error_median": median, "channel_error_p95": p95}
-            )
-            assert median <= 2.0 and p95 <= 5.0, rows
+    for mirrored in (False, True):
+        for folded in (False, True):
+            for angle in (0.0, 0.8):
+                cpu = mirror_texture(rgb, (320.0, 180.0), 120.0, angle, folded, 100.0, 12.0)
+                h, w = cpu.shape[:2]
+                gpu = draw(
+                    patch,
+                    rgb,
+                    (w, h),
+                    mode=2,
+                    radius=120.0,
+                    mirror_angle=angle,
+                    folded=int(folded),
+                    mirrored=int(mirrored),
+                )
+                px, py = np.meshgrid(
+                    np.linspace(-120, 120, w), np.linspace(-120 * MIRROR_ASPECT, 120 * MIRROR_ASPECT, h)
+                )
+                interior = np.maximum(abs(px) - 120, abs(py) - 120 * MIRROR_ASPECT) < -35
+                error = np.abs(cpu.astype("float32") - gpu.astype("float32"))[interior]
+                median, p95 = float(np.median(error)), float(np.percentile(error, 95))
+                rows.append(
+                    {
+                        "mirrored": mirrored,
+                        "folded": folded,
+                        "angle": angle,
+                        "channel_error_median": median,
+                        "channel_error_p95": p95,
+                    }
+                )
+                assert median <= 2.0 and p95 <= 5.0, rows
     report["cpu_gl_mirror_interior_parity"] = rows
     (args.output / "results.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), "utf-8")
     print(json.dumps(report))

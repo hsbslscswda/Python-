@@ -1,0 +1,75 @@
+{
+  "version": "0.4.2",
+  "base_runtime_commit": "c3d70f60c6acf9bf15cf3b609816300c682643a4",
+  "working_parent_commit": "c3d70f6",
+  "package_name": "镜中取月_v0.4.1_Gemini特效与交互终极升级包.zip",
+  "package_sha256": "2741013725798b6032686cca3af1d66ed48656dc733dfed175614bb6ebfb3370",
+  "decisions": "GEMINI_REVIEW_RESPONSE.md",
+  "files": [
+    {
+      "path": "assets/stage.frag",
+      "before_sha256": "11f137bcca23272b19aca295884d5f1c65a4934443b8ee85df868a9b77a856cc",
+      "supplied_sha256": "8d73882142961aef8d1b925651c38ed3ea93dae14195b66e63204cccb4bfa3d1",
+      "integrated_sha256": "f1ff74b914a7f731efe109704ba0bbd1eed8e253e3dbc1b2d0b4d06c95fdd904",
+      "candidate_retained_exactly": false
+    },
+    {
+      "path": "src/mirror_moon/app.py",
+      "before_sha256": "9d7b055c2f2fb84748f08e671ec8bb04c4de91d2e7234453fbb88bd84e1efefd",
+      "supplied_sha256": "2e91a2abdcf1972bc3801c42dd072aff4d55228c0e9ca00774cc6b38ea4ff8c2",
+      "integrated_sha256": "9d7b055c2f2fb84748f08e671ec8bb04c4de91d2e7234453fbb88bd84e1efefd",
+      "candidate_retained_exactly": false
+    },
+    {
+      "path": "src/mirror_moon/fire.py",
+      "before_sha256": "1cfd87a97c132a8a5b158a51df36afc82587680277c318a0791b40f220991e0a",
+      "supplied_sha256": "744963fcaa3dc855d51dc5f9dcd50afea3d3646f465b2e5fc6b098f6804766b7",
+      "integrated_sha256": "1b6a843ab967818bc29cf0951b8e91477a5e21fa07ce24c9b49afdeedd98b57e",
+      "candidate_retained_exactly": false
+    },
+    {
+      "path": "src/mirror_moon/guide.py",
+      "before_sha256": "4daf408e6ad82e0f90abec799d9933144d141bd32aca3a74ba21a39d14631e8b",
+      "supplied_sha256": "a5788c53a99c9856f1ce254cd1762757005b30cd723340bd9271b422c19de9a2",
+      "integrated_sha256": "4daf408e6ad82e0f90abec799d9933144d141bd32aca3a74ba21a39d14631e8b",
+      "candidate_retained_exactly": false
+    },
+    {
+      "path": "src/mirror_moon/interaction.py",
+      "before_sha256": "911d873997304543b670f8b64cf27f1674bd7fb35f579ae7c14455c28eb2ca9f",
+      "supplied_sha256": "212ee694811095c6b1e2ac720a37334a73a28837f54c73176f266c4e8745eb24",
+      "integrated_sha256": "47df11a00fdc1e763c21811005067842b885797d97b86c8824d8c414d126f0b9",
+      "candidate_retained_exactly": false
+    },
+    {
+      "path": "src/mirror_moon/render.py",
+      "before_sha256": "ef59ab94cbbd7a19e909efa6594103a66bccdd860a701d88406b100c7cc6c435",
+      "supplied_sha256": "34d31b82cdcd1eb9a7c7f4859b1af9adebcec30478ccd5cc25431163c407cd96",
+      "integrated_sha256": "2cd14132197a27efb1e44a7183d3900eec45b6b2f114a09a7cb21e696dcbae99",
+      "candidate_retained_exactly": false
+    },
+    {
+      "path": "src/mirror_moon/water.py",
+      "before_sha256": "346f3b5b5d18aead6bd7630c4b05648ba175100e5ec35565847acbdf66331596",
+      "supplied_sha256": "8da0bcec7a130920675efb3273dadef4faa583de471d483ae4c5ee2f1cc29959",
+      "integrated_sha256": "19f0d3ae3ca52831de8ca6a59b6bcc07fa0b0c2e7ab40e27832df5bccea024e1",
+      "candidate_retained_exactly": false
+    },
+    {
+      "path": "tests/test_seated_spells.py",
+      "before_sha256": "9309772dfc3ea7ee3c53a6b3b691d88ea98b9aa95b0652caab0012b830e6880b",
+      "supplied_sha256": "41eb3f03dc10754c3ec41a6b5a6384cbccb0c0d7fcde1dbbec0036f53c393051",
+      "integrated_sha256": "49f0681121890a3aef46b98cbaa23b37885a92ed78f322b034da32b74bb4c580",
+      "candidate_retained_exactly": false
+    }
+  ],
+  "additional_runtime_and_test_files": {
+    "src/mirror_moon/config.py": "a9b42d2bf37da9c23769b0cc2224248aec3f5c1ce6027bdcc84626662d3c5491",
+    "src/mirror_moon/mirror_texture.py": "9635728142978f9ec0679d6b77ee452431754d158709885849a890d6f9860d5d",
+    "src/mirror_moon/__init__.py": "ce25ac9e89a8c2906ecc5d933e202f9e4a0f131b25296481c4492afd16c11939",
+    "tests/test_mirror_visuals.py": "f34c526fbc9f9981fbac3da465d9614c5089c0d5790687e30f100697f155620d",
+    "tools/shader_probe.py": "43249ffe0544585254858fd2223d3b245bd6caf03e1267c4a7f53a2acb2824ad",
+    "pyproject.toml": "5318c8e273a35cedaca9a7c9933db604d8beceaafb0796ca013afbf2af739ea9"
+  },
+  "candidate_base_runtime_commit": "172977fe627c9f4ff2310e905bd8fae0341d5dd0"
+}

@@ -594,7 +594,8 @@ void main() {
     // ═══════════════════════════════════════════════════════════════════════════
     if (mode == 2 && visibility > 0.01 && radius > 2.0) {
         vec2 center_px = map_point(center);
-        vec2 local = rot(-mirror_angle) * (px - center_px);
+        vec2 display_axis = vec2(mirrored == 1 ? -1.0 : 1.0, 1.0);
+        vec2 local = rot(mirror_angle) * ((px - center_px) * display_axis);
         vec2 half_size = vec2(radius * s_scale, radius * s_scale * 0.68);
         vec2 q = local / max(vec2(1.0), half_size);
 
@@ -632,9 +633,9 @@ void main() {
             vec2 shard_tilt = (shard_rnd - 0.5) * dissolve * 0.08;
             float disp = bevel_zone * 0.020 + dissolve * 0.015;
             vec2 base_sample = uv - 0.5 + shard_tilt;
-            vec2 sample_r = center_px + (base_sample + bevel_norm * disp) * half_size * 2.0;
-            vec2 sample_g = center_px + (base_sample + bevel_norm * disp * 0.35) * half_size * 2.0;
-            vec2 sample_b = center_px + (base_sample - bevel_norm * disp * 0.75) * half_size * 2.0;
+            vec2 sample_r = center_px + (base_sample + bevel_norm * disp) * half_size * 2.0 * display_axis;
+            vec2 sample_g = center_px + (base_sample + bevel_norm * disp * 0.35) * half_size * 2.0 * display_axis;
+            vec2 sample_b = center_px + (base_sample - bevel_norm * disp * 0.75) * half_size * 2.0 * display_axis;
 
             vec3 reflected = vec3(
                 texture(camera_tex, unmap_point(sample_r)).r,

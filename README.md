@@ -1,10 +1,10 @@
-# 镜中取月 v0.4.1
+# 镜中取月 v0.4.2
 
 本轮集成Gemini特效候选：冰晶式定向射流、透明折射水球、火焰细节与切角折镜，并补齐CPU冻结采样/不规则碎片。保留已有结束规则、普通名称和双元素选择；逐项判断见[审查回应](docs/GEMINI_REVIEW_RESPONSE.md)。
 
 ## 直接运行
 
-下载[Windows运行包](https://github.com/hsbslscswda/Python-/releases/download/v0.4.1/MirrorMoon-Windows-v0.4.1.zip)，完整解压后双击「启动摄像头.cmd」。无需安装Python；保留_internal。标题应为v0.4.1。C关闭摄像头，Esc重置，空格暂停，F11全屏。所有功能本机运行，不依赖LLM或网络服务。
+下载[Windows运行包](https://github.com/hsbslscswda/Python-/releases/download/v0.4.2/MirrorMoon-Windows-v0.4.2.zip)，完整解压后双击「启动摄像头.cmd」。无需安装Python；保留_internal。标题应为v0.4.2。C关闭摄像头，Esc重置，空格暂停，F11全屏。所有功能本机运行，不依赖LLM或网络服务。
 
 ## 坐着也能操作
 
