@@ -37,6 +37,8 @@ class Arm:
 
     @property
     def source(self):
+        if self.hand_valid and not self.upper_valid and self.pose_confidence <= 0:
+            return "HAND_ONLY"
         return (
             "HAND_POSE"
             if self.hand_valid and self.tracked

@@ -278,6 +278,7 @@ def test_hand_only_extraction_and_other_person_owner_continuity():
     empty = NS(pose_landmarks=[], pose_world_landmarks=[])
     f = FeatureExtractor().extract(hands, empty, 1280, 720, 0, 0)
     assert not f.valid and all(a.hand_valid and a.palm for a in f.arms)
+    assert all(a.source == "HAND_ONLY" for a in f.arms)
     ext = FeatureExtractor()
     ext.extract(hands, pose, 1280, 720, 0, 0)
     second = [NS(**vars(p)) for p in pose.pose_landmarks[0]]

@@ -86,6 +86,9 @@ def sample(elapsed, now, frame_id, mode="circle"):
                 openness=0.0 if shape == Shape.FIST else 1.0,
                 palm_scale=65,
                 normal=(0.0, 1.0 if 7.5 < phase < 8.0 else -1.0, 0.0),
+                shoulder=(0.0, 0.0),
+                elbow=(0.0, 0.0),
+                pose_confidence=0.0,
             )
             for i, a in enumerate(arms)
         )
@@ -133,7 +136,8 @@ def sample(elapsed, now, frame_id, mode="circle"):
     cv2.ellipse(rgb, (640, 490), (145, 220), 0, 180, 360, (32, 52, 65), -1)
     cv2.circle(rgb, (640, 193), 61, (43, 64, 76), -1)
     for arm in arms:
-        for a, b in ((arm.shoulder, arm.elbow), (arm.elbow, arm.wrist)):
-            cv2.line(rgb, tuple(map(int, a)), tuple(map(int, b)), (66, 91, 108), 24, cv2.LINE_AA)
+        if mode != "fire":
+            for a, b in ((arm.shoulder, arm.elbow), (arm.elbow, arm.wrist)):
+                cv2.line(rgb, tuple(map(int, a)), tuple(map(int, b)), (66, 91, 108), 24, cv2.LINE_AA)
         cv2.circle(rgb, tuple(map(int, arm.wrist)), 16, (149, 178, 190), -1)
-    return rgb, Features(now, frame_id, width, height, chest, scale, arms)
+    return rgb, Features(now, frame_id, width, height, chest, scale, arms, valid=mode != "fire")

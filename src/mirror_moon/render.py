@@ -427,7 +427,7 @@ def draw_debug(painter, data, width, height):
             if arm.hand_valid
             else QPen(QColor("#aa9971"), 1.5, Qt.PenStyle.DashLine)
         )
-        if arm.tracked:
+        if arm.upper_valid or (data.scene.features.valid and arm.tracked):
             painter.drawLine(QPointF(*arm.shoulder), QPointF(*arm.elbow))
             painter.drawLine(QPointF(*arm.elbow), QPointF(*arm.wrist))
         for point in arm.landmarks:
