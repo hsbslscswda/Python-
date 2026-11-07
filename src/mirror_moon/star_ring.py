@@ -16,7 +16,7 @@ class Circle:
         self.hold = Hold()
         self.controllers = {side: IntensityController() for side in ("left", "right")}
         self.profiles = {}
-        self.bent, self.extended = 75.0, 160.0
+        self.bent, self.extended = 75.0, 134.0
         self.last_good = self.last_caster = 0.0
         self.last_support_hand = self.last_caster_hand = -1e9
         self.last_open = -1e9
@@ -34,7 +34,7 @@ class Circle:
 
     @staticmethod
     def raised(arm, f):
-        return not arm_lowered(arm, f) and arm.wrist[1] < f.chest[1] + 0.70 * f.scale
+        return not arm_lowered(arm, f) and arm.wrist[1] < f.chest[1] + 0.75 * f.scale
 
     @staticmethod
     def chest_fist(arm, f):
@@ -103,31 +103,49 @@ class Circle:
                 elif not self.session_started and self.hold.ready("summon_lost", not chest, t, 0.85):
                     self.transition("FADING", t)
 
-            d, along = segment_distance(support.wrist, caster.elbow, caster.wrist)
-            d /= s
+            # Support-to-caster distance: check both forearm (elbow->wrist) and upper-arm (shoulder->elbow)
+            # so when the caster arm is fully extended toward the camera (foreshortened in 2D),
+            # placing the support hand anywhere on the extended arm is still recognized!
+            d_fore, along = segment_distance(support.wrist, caster.elbow, caster.wrist)
+            d_upper, along_upper = segment_distance(support.wrist, caster.shoulder, caster.elbow)
+            d_wrist = distance(support.wrist, caster.wrist)
+            d = min(d_fore, d_upper if 0.15 <= along_upper <= 1.0 else d_fore) / s
             for history in (self.distances, self.support_path):
-                while history and t - history[0][0] > 1.25:
+                while history and t - history[0][0] > 1.35:
                     history.popleft()
             relative = ((support.wrist[0] - f.chest[0]) / s, (support.wrist[1] - f.chest[1]) / s)
-            reference = next((row for row in self.distances if 0.15 <= t - row[0] <= 1.20), None)
-            path_ref = next((row for row in self.support_path if 0.15 <= t - row[0] <= 1.20), None)
-            moving = path_ref is not None and distance(relative, path_ref[1]) > 0.075
-            approach = reference is not None and reference[1] - d > 0.03
+            reference = next((row for row in self.distances if 0.12 <= t - row[0] <= 1.25), None)
+            path_ref = next((row for row in self.support_path if 0.12 <= t - row[0] <= 1.25), None)
+            moving = path_ref is not None and distance(relative, path_ref[1]) > 0.06
+            approach = reference is not None and reference[1] - d > 0.025
             if support.tracked and f.valid:
-                if moving and approach and t - self.last_support_hand < 0.5:
-                    self.approach_until = t + 0.85
+                if moving and approach and t - self.last_support_hand < 0.65:
+                    self.approach_until = t + 0.90
                 self.distances.append((t, d))
                 self.support_path.append((t, relative))
-            foreshortened = distance(caster.elbow, caster.wrist) / s < 0.25
-            along_ok = -0.05 <= along <= 1.22 or (
-                foreshortened and distance(support.wrist, caster.elbow) / s < self.cfg.grip_enter
+            # Crucial fix for straight/extended caster arm:
+            # When the arm is extended forward (angle > 115° or 2D forearm length < 0.42s),
+            # perspective foreshortening shrinks and shifts the 2D elbow-wrist segment!
+            is_extended_arm = (caster.angle is not None and caster.angle > 115.0) or (
+                distance(caster.elbow, caster.wrist) / s < 0.42
+            )
+            along_ok = (
+                -0.15 <= along <= 1.32
+                or (
+                    is_extended_arm
+                    and (
+                        d_wrist / s < self.cfg.grip_enter * 1.20
+                        or distance(support.wrist, caster.elbow) / s < self.cfg.grip_enter * 1.20
+                        or 0.15 <= along_upper <= 1.05
+                    )
+                )
             )
             near = (
                 support.tracked
-                and caster.elbow_visible
+                and (caster.elbow_visible or caster.tracked)
                 and along_ok
-                and d < self.cfg.grip_enter
-                and t - self.last_support_hand < 0.50
+                and d < self.cfg.grip_enter * (1.18 if is_extended_arm else 1.0)
+                and t - self.last_support_hand < 0.65
             )
             if self.state == "CAST":
                 if near or (support.tracked and moving and d < 0.65 and t <= self.approach_until):
@@ -140,13 +158,17 @@ class Circle:
                 elif t - self.entered > self.cfg.transfer_window or (chest and d > self.cfg.grip_exit):
                     self.transition("CAST", t)
             elif self.state == "OVERDRIVE":
-                support_lost = self.hold.ready("support_lost", not support.tracked, t, 0.3)
-                outside = support.tracked and (
-                    d > self.cfg.grip_exit or (not foreshortened and not -0.15 <= along <= 1.35)
-                )
-                detached = self.hold.ready("detach", outside, t, 0.15)
-                if detached or support_lost:
-                    self.transition("RETURN", t)
+                if chest and d > self.cfg.grip_exit:
+                    self.transition("CAST", t)
+                else:
+                    support_lost = self.hold.ready("support_lost", not support.tracked, t, 0.30)
+                    outside = support.tracked and (
+                        d > self.cfg.grip_exit * 1.15
+                        or (not is_extended_arm and not -0.20 <= along <= 1.40)
+                    )
+                    detached = self.hold.ready("detach", outside, t, 0.22)
+                    if detached or support_lost:
+                        self.transition("RETURN", t)
             elif self.state == "RETURN" and t - self.entered >= 0.25:
                 self.transition("CAST", t)
 
@@ -157,15 +179,23 @@ class Circle:
                 angle = caster.angle if f.valid and caster.tracked else None
                 normal = control.update(angle, t, *endpoints)
                 reliable = control.reliable
+                if (
+                    self.state in ("TRANSFER", "OVERDRIVE")
+                    and not caster.hand_valid
+                    and caster.tracked
+                    and self.raised(caster, f)
+                ):
+                    self.last_open = max(self.last_open, t - 0.30)
+                    self.last_caster_hand = max(self.last_caster_hand, t - 0.30)
                 intent_age = t - min(self.last_caster_hand, self.last_open)
-                intent_hold = 1.10 if self.state in ("TRANSFER", "OVERDRIVE") else 0.60
+                intent_hold = 1.10 if self.state in ("TRANSFER", "OVERDRIVE") else 0.70
                 if intent_age > intent_hold:
                     normal *= max(0.0, 1.0 - (intent_age - intent_hold) / 0.25)
                 if intent_age > intent_hold + 0.30:
                     self.transition("READY", t)
                     normal = 0.0
                 if self.state == "OVERDRIVE" and (
-                    reliable or (control.last_good is not None and t - control.last_good < 0.60)
+                    reliable or (control.last_good is not None and t - control.last_good < 0.75)
                 ):
                     self.intensity = normal + (1.10 + 0.40 * normal - normal) * smoothstep(self.migration)
                 else:
@@ -192,13 +222,13 @@ class Circle:
             m = smoothstep(self.migration)
             center = tuple(a + (b - a) * m for a, b in zip(center, palm))
         hints = {
-            "OFF": "一手在胸前或肩前松握拳，即可召唤；肘角不限",
-            "SUMMONING": "星环展开中",
+            "OFF": "一手在胸前或肩前松握拳，即可召唤星环；肘角不限",
+            "SUMMONING": "古星盘展开中…",
             "READY": "另一手张开抬起开始施法；握拳停法，放下施法手收阵",
-            "CAST": "施法中：召唤手可自由活动，搭住施法前臂可突破100%",
-            "TRANSFER": "正在确认搭臂：靠近前臂中段并稍作保持",
-            "OVERDRIVE": "搭臂增强 110–150%；放开恢复普通，放下施法手收阵",
-            "RETURN": "恢复普通施法，召唤手无需回胸",
+            "CAST": "施法中：伸臂增强，召唤手搭在施法前臂或手腕上可突破 100%",
+            "TRANSFER": "星环共鸣中：保持搭臂即可解放过载阵列",
+            "OVERDRIVE": "过载施法 110–150%；松开恢复常态，放下施法手收阵",
+            "RETURN": "恢复常态施法，召唤手无需回胸",
             "FADING": "收阵中，放松后可重新召唤",
         }
         quality = f.reason if not f.valid else "肘角已读" if reliable else "已识别"

@@ -12,7 +12,7 @@ def valid_endpoints(bent, extended):
     return (
         all(isinstance(x, (float, int)) and math.isfinite(x) for x in (bent, extended))
         and 20 <= bent
-        and bent + 18 <= extended <= 180
+        and bent + 15 <= extended <= 180
     )
 
 
@@ -39,7 +39,7 @@ class IntensityController:
         self.movement_sign = self.movement_count = 0
         self.fast_until = -1e9
 
-    def update(self, angle, now, bent=75.0, extended=160.0):
+    def update(self, angle, now, bent=75.0, extended=134.0):
         dt = min(0.20, max(0.0, now - self.last_t)) if self.last_t is not None else 0.05
         self.last_t = now
         if angle is not None and math.isfinite(angle) and 20.0 <= angle <= 180.0:
@@ -53,7 +53,7 @@ class IntensityController:
             )
             self.movement_sign = sign
             if self.movement_count >= 2:
-                self.fast_until = now + 0.30
+                self.fast_until = now + 0.35
             moving = now <= self.fast_until
             samples = list(self.samples)[-3:] if moving else self.samples
             robust = statistics.median(a for _, a in samples)
@@ -69,15 +69,15 @@ class IntensityController:
             )
             self.reliable = False
             moving = False
-        if abs(target - self.value) < (0.025 if moving else 0.035):
+        if abs(target - self.value) < (0.025 if moving else 0.045):
             if target in (0.0, 1.0):
                 self.value = target
             return self.value
-        alpha = 1.0 - math.exp(-dt / (0.055 if moving else 0.17))
+        alpha = 1.0 - math.exp(-dt / (0.050 if moving else 0.24))
         proposed = self.value + alpha * (target - self.value)
-        slew = 4.0 if moving else 2.2
+        slew = 4.2 if moving else 2.0
         self.value += max(-slew * dt, min(slew * dt, proposed - self.value))
         self.value = max(0.0, min(1.0, self.value))
-        if target == 0.0 and self.value < 0.012:
+        if target == 0.0 and self.value < 0.015:
             self.value = 0.0
         return self.value

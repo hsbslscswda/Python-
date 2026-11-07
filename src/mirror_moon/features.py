@@ -34,7 +34,8 @@ def classify(points, previous=Shape.UNKNOWN, world=None):
 
 class FeatureExtractor:
     def __init__(self):
-        self.scale_filter = OneEuro(1.8, 0.005)
+        self.scale_filter = OneEuro(1.2, 0.003)
+        self.yaw_filter = OneEuro(0.8, 0.002)
         self.previous = {}
         self.last_seen = {}
         self.palm_sizes = {}
@@ -42,6 +43,7 @@ class FeatureExtractor:
         self.last_t = None
         self.last_scale = self.last_chest = self.reference_scale = self.reference_torso = None
         self.last_body = None
+        self.last_yaw = 0.0
 
     def extract(self, hands, pose, width, height, timestamp, frame_id):
         if self.last_t is not None and (timestamp - self.last_t > 0.5 or timestamp < self.last_t):
@@ -131,7 +133,7 @@ class FeatureExtractor:
             elif prior and age < 0.35:
                 geometric = distance(hand[0], prior[0]) / scale + 0.15
             else:
-                return 1.30  # No localization evidence must cost MORE than leaving it unmatched.
+                return 1.30
             continuity = 0.0
             if prior and age < 0.45:
                 delta = distance(hand[0], prior[0]) / scale
@@ -162,8 +164,6 @@ class FeatureExtractor:
                 alternatives = {pair[side_id] for pair in plausible}
                 if len(alternatives) == 1:
                     kept[side_id] = next(iter(alternatives))
-            # Preserve individually identifiable hands, including the one-hand case.
-            # Never reuse an index or rescue a truly coincident identity by arbitrary side.
             for index in candidates:
                 if index in kept:
                     continue
@@ -216,15 +216,15 @@ class FeatureExtractor:
             if not hand and other is not None and distance(xy(wrist), raw[other][0]) / scale < 0.12:
                 own_prior = self.previous.get(side)
                 if not own_prior or shape_age > 0.35 or distance(xy(wrist), own_prior[0]) / scale > 0.40:
-                    tracked = False  # An unseen arm cannot be established by the other hand's wrist.
+                    tracked = False
             angle = None
             q = min(confidence(i) for i in ids)
-            if world and q >= 0.28:
+            if world and q >= 0.24:
                 coordinates = [tuple(getattr(world[i], axis) for axis in ("x", "y", "z")) for i in ids]
                 lengths = tuple(math.dist(coordinates[i], coordinates[i + 1]) for i in (0, 1))
                 previous = self.bones.get(side, lengths)
                 if all(
-                    0.035 < length < 1.0 and 0.45 < length / max(0.001, before) < 2.2
+                    0.025 < length < 1.15 and 0.38 < length / max(0.001, before) < 2.6
                     for length, before in zip(lengths, previous)
                 ):
                     angle = angle3(*coordinates)
@@ -248,8 +248,15 @@ class FeatureExtractor:
                 )
             )
         yaw = None
-        if world and reliable(11, 0.60) and reliable(12, 0.60):
+        if world and reliable(11, 0.55) and reliable(12, 0.55):
             v = tuple(getattr(world[12], axis) - getattr(world[11], axis) for axis in ("x", "y", "z"))
-            if all(math.isfinite(x) for x in v) and 0.15 < math.dist(v, (0.0, 0.0, 0.0)) < 0.8:
-                yaw = max(-1.1, min(1.1, math.atan2(v[2], abs(v[0]))))
+            if all(math.isfinite(x) for x in v) and 0.12 < math.dist(v, (0.0, 0.0, 0.0)) < 0.85:
+                raw_yaw = max(-1.1, min(1.1, math.atan2(v[2], abs(v[0]))))
+                # Apply upright deadband (|raw_yaw| < 0.14 rad ≈ 8°) so frontal standing never tilts randomly!
+                if abs(raw_yaw) < 0.14:
+                    raw_yaw = 0.0
+                yaw = self.yaw_filter(raw_yaw, timestamp)
+                if abs(yaw) < 0.03:
+                    yaw = 0.0
+                self.last_yaw = yaw
         return Features(timestamp, frame_id, width, height, chest, scale, tuple(result), valid, reason, yaw)

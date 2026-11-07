@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import time
 from collections import defaultdict
 from pathlib import Path
 from types import SimpleNamespace
@@ -42,6 +43,16 @@ def main():
     )
     window = Window(options)
     window.show()
+
+    def neutral_resize_phase():
+        if window.pipeline is None:
+            QTimer.singleShot(20, neutral_resize_phase)
+            return
+        # New cyan/gold bloom can tint the orientation marker without moving it.
+        # Check camera/FBO orientation with an OFF spell, then test effects below.
+        window.pipeline.set_controls(suppress_until=time.perf_counter() + 6.0)
+
+    QTimer.singleShot(0, neutral_resize_phase)
     states = defaultdict(set)
     checks = []
     gaps = []
@@ -89,12 +100,16 @@ def main():
         x = (image.width() - 1280 * fit) / 2 + 170 * fit
         y = (image.height() - 720 * fit) / 2 + 80 * fit
         color = image.pixelColor(int(x), int(y))
+        marker_ok = color.red() > color.green() * 1.5 and color.red() > color.blue() * 1.5
+        if not marker_ok:
+            image.save(str(args.output / f"marker-failure-{index}.png"))
         checks.append(
             {
                 "resize": index,
                 "size": [image.width(), image.height()],
                 "fbo": window.stage.defaultFramebufferObject(),
-                "red_marker_correct": color.red() > color.green() * 1.5 and color.red() > color.blue() * 1.5,
+                "red_marker_correct": marker_ok,
+                "marker_rgb": [color.red(), color.green(), color.blue()],
             }
         )
 

@@ -38,7 +38,7 @@ class Controls:
     reset_id: int = 0
     suppress_until: float = 0.0
     bent: float = 75.0
-    extended: float = 160.0
+    extended: float = 134.0
     profiles: tuple = ()
 
 

@@ -10,6 +10,7 @@ from PySide6.QtCore import QTimer
 from PySide6.QtGui import QSurfaceFormat
 from PySide6.QtWidgets import QApplication
 
+from mirror_moon import __version__
 from mirror_moon.app import STYLE, Window
 
 
@@ -45,7 +46,14 @@ def main():
     phase = 0
     old_pipeline = None
     stopped_at = None
-    result = {"synthetic_only": args.demo, "camera_images_saved": False}
+    result = {
+        "version": __version__,
+        "synthetic_only": args.demo,
+        "camera_images_saved": False,
+        "blade_index_retained": window.mode.itemData(1) == "blade",
+        "blade_row_hidden": window.mode.view().isRowHidden(1),
+        "default_endpoints": window.endpoints,
+    }
     window.destroyed.connect(lambda: result.update(window_destroyed_before_app_exit=True))
 
     def poll():
@@ -85,6 +93,7 @@ def main():
     suffix = "demo" if args.demo else "camera"
     (out / f"ui-smoke-{suffix}.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), "utf-8")
     assert "error" not in result, result
+    assert result["blade_index_retained"] and result["blade_row_hidden"]
     assert result.get("window_destroyed_before_app_exit") and result["audio_disposed_before_app_exit"]
     assert result["preview_closed_cleanly"] and result["scene_cleared"] and result["new_pipeline"]
     assert result["reopened_preview"]["pipeline_error"] is None and result["final_workers_closed_cleanly"]

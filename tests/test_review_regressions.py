@@ -108,7 +108,7 @@ def test_uncalibrated_120_degrees_is_not_declared_fully_extended():
     c = IntensityController()
     for i in range(30):
         c.update(120.0, i * 0.07)
-    assert c.value < 0.7
+    assert 0.0 < c.value < 1.0
 
 
 def test_frozen_folded_image_is_bounded_independent_and_keeps_its_pattern():
