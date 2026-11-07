@@ -1,4 +1,77 @@
-# v0.4.0 最短自测
+# 镜中取月 v0.4.0 工程交接
+
+更新日期：2026-11-07。持续协作见 [工程协作与每轮交付约定](WORKFLOW.md)，根目录AGENTS.md是工程恢复入口。
+
+## 当前版本与最新用户需求
+
+运行程序、Windows/源码/审查ZIP固定基线为 `v0.4.0 / 172977fe627c9f4ff2310e905bd8fae0341d5dd0`，上一运行基线e0e52e6，任务分支 `codex/mirror-moon`。本轮仅补协作/交接、发布和转交材料；运行代码、EXE及三个ZIP保持原样，后续文档提交不移动v0.4.0标签。
+
+以SPEC末尾“v0.4.0本轮用户变更优先”和DECISIONS最新段为准：
+
+- 星环：低Bloom、暖色金属法阵与蓝/紫定向射流/移动能量包分色，普通按钮名；坐姿/胸前/颈前横臂和松拳召唤更宽松，另一手开掌输出、弯伸调强度、搭臂过载、握拳停法留阵、放下收阵。
+- 手动切换免垂手，不需摄像头拍到垂下的手。镜界画外/丢手保持，有可靠肩肘可估计控制，完全丢失冻结，重获继续；慢合保持关闭、可见快合碎裂，丢手不碎镜。
+- 水球：任意掌向握拳→摊开，惯性跟随，双掌夹球扩张，搭腕/前臂发射；近大远小、重力、估计人物/镜头碰撞与飞溅。丢手/身体遮挡不取消，暂停冻结，拍掌结束；明确切换/重置/关摄像头仍清理，发射后回凝属原会话。
+- 火焰只看手、左右独立。首次每手张开→握拳满2秒解锁→再张开点火，之后反复点火；半握收缩，全拳/翻掌向下熄灭；约0.15秒确认，OTHER/PINCH/UNKNOWN/缺失不当全拳，短丢失保持后缓熄。
+- 当前界面展示星环、镜界、水球、掌心火焰。月刃菜单隐藏，内部实现/index 1及测试保留。历史D未实现，水火需求优先。
+
+## 实际文件与入口
+
+本机项目根目录：`C:\Users\hsbsl\Documents\Codex\2026-11-07\https-github-com-hsbslscswda-python-invitations`。
+
+| 用途 | 相对项目根目录路径 |
+|---|---|
+| Git仓库 | work/Python- |
+| 最简单启动 | outputs/双击启动镜中取月.lnk |
+| 摄像头入口 | outputs/镜中取月_v0.4.0/启动摄像头.cmd |
+| 兼容画质 | outputs/镜中取月_v0.4.0/兼容画质.cmd |
+| Windows包 | outputs/镜中取月_Windows_v0.4.0.zip |
+| 源码包 | outputs/镜中取月_源码_v0.4.0.zip |
+| 审查包 | outputs/发给Gemini_v0.4.0/镜中取月_v0.4.0_Gemini审查包.zip |
+| 粘贴提示词 | outputs/发给Gemini_v0.4.0/复制给Gemini.txt |
+| 转交说明 | outputs/发给Gemini_v0.4.0/怎么发.md |
+| 原始软件证据 | work/Python-/local/incoming-v040 |
+| 哈希清单 | outputs/交付校验_v0.4.0.json |
+| 发布记录 | outputs/GitHub下载_v0.4.0.json（续发完成后生成） |
+
+原聊天cwd `C:\Users\hsbsl\Documents\ChatGPT\镜中取月` 不是实际Git仓库，不在该空目录重建。
+
+快捷方式目标为运行目录MirrorMoon.exe，参数 `--autostart --diagnostics`。标题必须显示v0.4.0；完整解压Windows包后运行CMD，保留_internal，无需Python。源开发环境在仓库.venv（Python3.12），依赖锁见requirements-lock.txt；运行不依赖LLM/网络。
+
+诊断目录：`C:\Users\hsbsl\AppData\Local\MirrorMoon\diagnostics`。用户只需点记录日志并反馈动作/时段；Codex自动查找和分析，不要求用户找文件。日志不默认录制RGB/音频。
+
+## 已验证、待验证与未完成
+
+下述软件结果为v0.4.0既有证据，本轮未重跑产品测试/重建：
+
+- 129项pytest、Ruff、compileall、diff检查已记录。pytest/ruff结果在local/incoming-v040/pytest-results.txt、ruff-results.txt。
+- 实际GL/QPainter构造时序、GL十次依次缩放/全屏色标通过。graphics-final、graphics-compat及new-spells-final、new-spells-compat记录预期事件与水球HELD/SCALING/FLYING、双手火焰BURNING。
+- 中文路径模型buffer、同帧双Tasks dummy图；源摄像头关闭/重开；最终EXE七项与真实ZIP解压运行已记录通过。见package-smoke.json、package-run.txt、extracted-package-smoke.json、zip-run.txt。
+- 交付EXE双模型同帧15.01Hz、ZIP短时21.1Hz；软件数据年龄p95为54.71/83.77ms。Qt提交约63Hz不是显示完成FPS，软件数据年龄不含完整曝光/驱动/显示延迟，也不保证长时20Hz。
+- 恢复时三个ZIP及EXE哈希均一致；本轮检查审查ZIP固定基线、106个文件及证据清单，无jsonl/个人视频/模型/EXE。
+
+完整结果和历史失败见 [VALIDATION.md](VALIDATION.md) 顶部v0.4.0。EXE SHA256：`ea01c1d6f571681b7c198cf24dc11a2fe67d39736aadcfeb2b1dad2e0108b02d`。
+
+真人坐姿、半掌/松拳、掌心方向、水球任意掌向/双人身份及命中/拍掌误停、镜界画外恢复和视觉待复验。尚无27/30成功率、每系统5分钟负样本、30分钟稳定性/内存曲线、其它GPU、真实端到端延迟验收。历史图形停顿未因一次无超限就认定根治。
+
+课程报告、真实分工、教师模板和真人视频未完成。D是历史可选扩展，未实现，不自动抢占水火与稳定性工作。
+
+## 远程发布状态
+
+运行基线172977f，复用原release ID `437538423`。恢复时草稿为untagged-a4b78a0608aa3871c219；源码/审查附件完整，Windows留有旧未完成占位（ID720570248、state=starter、digest=null），已核实并清理，正在补传Windows。三附件校验后公开为v0.4.0预发行。
+
+保留原审查附件ID720564418、源码附件ID720566286；不另建发布、不重传匹配附件、不重建程序。授权依据见WORKFLOW，最终状态以GitHub下载_v0.4.0.json和远程读取为准。
+
+## Gemini审查进度与双方待办
+
+v0.4.0审查ZIP已整理并核对，固定172977f；含源码、相对e0e52e6差异、需求、测试证据、非个人构造画面和限制。是否已转交尚未确认，未收到可归属v0.4.0的Gemini回复，不将旧版审查记为本版通过。
+
+用户上传上表唯一审查ZIP，再粘贴“复制给Gemini.txt”全文。当前最多三个重点：水球持续状态与物理；双手火焰/新鲜度；切换/镜界/视觉/资源回归。原ZIP保持；本轮协作文档独立提交，不改变包内基线。
+
+用户下一步：打开固定入口做下面短测，反馈“法术＋动作/视觉现象＋大致时间”；转交指定ZIP和提示词，回传Gemini完整回复。无需挑源码、整理问题或提取日志。
+
+Codex下一步：完成缺失发布并核对远程，保存提交协作/交接与转交材料；接到真实反馈自动分析本机日志并定位/复现；接到Gemini意见逐项接受/调整/不采用/延期，说明依据，完成修复并更新证据、版本和审查材料。独立技术工作继续，只有真实动作、审美和缺失授权才等待。
+
+## v0.4.0最短自测
 
 双击outputs的「双击启动镜中取月.lnk」，标题必须是v0.4.0。队友下载MirrorMoon-Windows-v0.4.0.zip，完整解压，双击「启动摄像头.cmd」。兼容画质用同目录CMD。
 
