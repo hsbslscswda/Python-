@@ -1,5 +1,7 @@
 # v0.4.4 本机验证（2026-11-08）
 
+固定运行/源码提交`54f709a3c0509b99a0f2fe8768cfaf51a0c4ab50`；公开预发行ID438226332，三附件服务器SHA256一致，Windows公开下载HEAD200。该行由后续文档提交补记，冻结包体和运行标签不变。
+
 固定演进基线v0.4.3/d2f715fc3813e7ad92a65cf592bca48939c15af0。本轮原始证据local/incoming-v044；源候选SHA见UPGRADE_IMPORT_v0.4.4.json。原样运行候选161项通过，集成新增7项边界回归共168 pytest；Ruff、compileall和diff检查通过。旧版记录按各自标题辨认。
 
 ## 软件与原生已验证
