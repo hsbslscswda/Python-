@@ -1,0 +1,25 @@
+{
+  "candidate_file": "镜中取月_v0.4.4_Gemini特效与交互终极升级包.zip",
+  "sha256": "168f1617bd400665a4a0a336da6ad53ff0f89cfa3069862a6c0451a06cdea484",
+  "base_commit": "d2f715fc3813e7ad92a65cf592bca48939c15af0",
+  "imported_into_branch": "codex/mirror-moon",
+  "backup": "local/incoming-v044",
+  "candidate_tests": 161,
+  "integrated_tests": 168,
+  "decisions": "docs/GEMINI_REVIEW_RESPONSE.md",
+  "authority": "Explicit user request overrides supplied README/colors/docs; retain existing development configuration.",
+  "changed_files": [
+    "pyproject.toml",
+    "assets/stage.frag",
+    "docs/DECISIONS.md",
+    "docs/HANDOFF.md",
+    "docs/SPEC.md",
+    "docs/VALIDATION.md",
+    "tests/test_v043_boundaries.py",
+    "src/mirror_moon/config.py",
+    "src/mirror_moon/features.py",
+    "src/mirror_moon/render.py",
+    "src/mirror_moon/water.py",
+    "src/mirror_moon/__init__.py"
+  ]
+}
