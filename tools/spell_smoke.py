@@ -15,6 +15,9 @@ from mirror_moon.app import STYLE, Window
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--compat", action="store_true")
+    parser.add_argument(
+        "--high", action="store_true", help="Exercise the high-quality shader and postprocessing"
+    )
     parser.add_argument("--output", type=Path, default=Path("local/new-spells"))
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
@@ -39,6 +42,8 @@ def main():
         diagnostics=True,
     )
     window = Window(options)
+    if args.high:
+        window.quality.setCurrentIndex(2)
     window.show()
     states = {"water": set(), "fire": set()}
     object_kinds = set()

@@ -128,3 +128,33 @@ def arm_lowered(arm, frame):
             )
         )
     )
+
+
+def wide_casting_span(frame) -> bool:
+    """True when arms are in a wide vertical (one up, one down) or horizontal (left-right) opening pose."""
+    left, right = frame.arms
+    s = max(1.0, frame.scale)
+    horiz_span = (
+        abs(left.wrist[0] - right.wrist[0]) > 1.25 * s or abs(left.elbow[0] - right.elbow[0]) > 1.15 * s
+    )
+    vert_span = (
+        min(left.wrist[1], right.wrist[1]) < frame.chest[1] + 0.15 * s
+        and abs(left.wrist[1] - right.wrist[1]) > 0.45 * s
+    ) or (
+        min(left.elbow[1], right.elbow[1]) < min(left.shoulder[1], right.shoulder[1]) + 0.08 * s
+        and abs(left.elbow[1] - right.elbow[1]) > 0.25 * s
+    )
+    return horiz_span or vert_span
+
+
+def both_arms_dropped_out(frame) -> bool:
+    """True when body is tracked, arms are NOT in a wide opening pose, and both hands hang down out of view."""
+    if not frame.valid or wide_casting_span(frame):
+        return False
+    return all(
+        not a.hand_valid
+        and (a.upper_valid or a.tracked)
+        and arm_lowered(a, frame)
+        and a.wrist[1] >= frame.height
+        for a in frame.arms
+    )

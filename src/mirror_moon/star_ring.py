@@ -1,4 +1,4 @@
-"""Star ring session: summon, free support hand, observed forearm boost, explicit end."""
+"""Star ring session: summon, free support hand, observed forearm/dual-palm boost, explicit end."""
 
 from collections import deque
 
@@ -34,28 +34,36 @@ class Circle:
 
     @staticmethod
     def raised(arm, f):
-        return not arm_lowered(arm, f) and arm.wrist[1] < f.chest[1] + 0.75 * f.scale
+        return not arm_lowered(arm, f) and arm.wrist[1] < f.chest[1] + 0.65 * f.scale
 
     @staticmethod
     def chest_fist(arm, f):
-        # No fixed elbow angle and no requirement to cross the forearm horizontally.
+        # Reject lowered/resting hands on lap, desk, or chair armrests so circle never false-summons when hands are down.
+        if arm_lowered(arm, f):
+            return False
         dx = abs(arm.wrist[0] - f.chest[0]) / max(1.0, f.scale)
         dy = (arm.wrist[1] - f.chest[1]) / max(1.0, f.scale)
-        horizontal = abs(arm.wrist[1] - arm.elbow[1]) < 0.55 * f.scale
+        horizontal = abs(arm.wrist[1] - arm.elbow[1]) < 0.48 * f.scale
+        wrist_not_hanging = not arm.elbow_visible or arm.wrist[1] <= arm.elbow[1] + 0.22 * f.scale
         return (
-            (
+            wrist_not_hanging
+            and (
                 arm.hand_valid
                 and arm.shape in (Shape.FIST, Shape.PINCH)
                 or horizontal
                 and (arm.hand_valid or arm.upper_valid and arm.wrist_confidence >= 0.55)
             )
-            and dx < 1.60
-            and (-1.40 < dy < 0.95 or (horizontal and -1.9 < dy < 1.2))
+            and dx < 1.15
+            and (-1.40 < dy <= 0.38 or (horizontal and -1.9 < dy <= 0.32))
         )
 
     def update(self, f):
         t, s = f.timestamp, max(1.0, f.scale)
-        dt = min(0.2, max(0.0, t - self.last_t)) if self.last_t is not None else 0.0
+        raw_dt = t - self.last_t if self.last_t is not None else 0.0
+        dt = min(0.2, max(0.0, raw_dt))
+        if raw_dt > 0.18:
+            self.hold.starts.pop("direct_near", None)
+            self.hold.starts.pop("dual_res", None)
         self.last_t = t
         emitted = []
         if f.valid:
@@ -116,13 +124,15 @@ class Circle:
                 elif not self.session_started and self.hold.ready("summon_lost", not chest, t, 0.85):
                     self.transition("FADING", t)
 
-            # Support-to-caster distance: check both forearm (elbow->wrist) and upper-arm (shoulder->elbow)
-            # so when the caster arm is fully extended toward the camera (foreshortened in 2D),
-            # placing the support hand anywhere on the extended arm is still recognized!
+            # Support-to-caster distance: focus on forearm (elbow->wrist) and wrist to avoid
+            # false overdrive when the support hand simply rests near the upper arm/chest!
             d_fore, along = segment_distance(support.wrist, caster.elbow, caster.wrist)
             d_upper, along_upper = segment_distance(support.wrist, caster.shoulder, caster.elbow)
             d_wrist = distance(support.wrist, caster.wrist)
-            d = min(d_fore, d_upper if 0.15 <= along_upper <= 1.0 else d_fore) / s
+            is_extended_arm = (caster.angle is not None and caster.angle > 115.0) or (
+                distance(caster.elbow, caster.wrist) / s < 0.42
+            )
+            d = min(d_fore, d_upper if (is_extended_arm and 0.55 <= along_upper <= 1.0) else d_fore) / s
             for history in (self.distances, self.support_path):
                 while history and t - history[0][0] > 1.35:
                     history.popleft()
@@ -136,44 +146,69 @@ class Circle:
                     self.approach_until = t + 0.90
                 self.distances.append((t, d))
                 self.support_path.append((t, relative))
-            # Crucial fix for straight/extended caster arm:
-            # When the arm is extended forward (angle > 115° or 2D forearm length < 0.42s),
-            # perspective foreshortening shrinks and shifts the 2D elbow-wrist segment!
-            is_extended_arm = (caster.angle is not None and caster.angle > 115.0) or (
-                distance(caster.elbow, caster.wrist) / s < 0.42
-            )
-            along_ok = -0.15 <= along <= 1.32 or (
+
+            along_ok = -0.10 <= along <= 1.32 or (
                 is_extended_arm
                 and (
                     d_wrist / s < self.cfg.grip_enter * 1.20
                     or distance(support.wrist, caster.elbow) / s < self.cfg.grip_enter * 1.20
-                    or 0.15 <= along_upper <= 1.05
+                    or 0.55 <= along_upper <= 1.05
                 )
             )
             near = (
                 support.tracked
+                and not arm_lowered(support, f)
                 and (caster.elbow_visible or caster.tracked)
                 and along_ok
                 and d < self.cfg.grip_enter * (1.18 if is_extended_arm else 1.0)
                 and t - self.last_support_hand < 0.65
             )
+            # Zero-occlusion alternative overdrive: Dual-Palm Resonance (双掌同辉共鸣结印)
+            # Raising and opening the support palm alongside the casting hand triggers overdrive without hand-on-arm occlusion!
+            dual_palm_open = (
+                f.valid
+                and support.hand_valid
+                and support.shape == Shape.OPEN
+                and (support.openness is None or support.openness >= 0.55)
+                and self.raised(support, f)
+                and 0.22 <= d_wrist / s <= 0.85
+                and abs(support.wrist[1] - caster.wrist[1]) / s <= 0.38
+            )
+            sustained_near = self.hold.ready(
+                "direct_near",
+                near and support.hand_valid and (d_wrist / s < 0.35 or along >= 0.25),
+                t,
+                0.10,
+            )
+            sustained_dual = self.hold.ready("dual_res", dual_palm_open, t, 0.14)
+
             if self.state == "CAST":
-                if near or (support.tracked and moving and d < 0.65 and t <= self.approach_until):
-                    if t <= self.approach_until:
-                        self.transition("TRANSFER", t)
+                if (
+                    ((near or (support.tracked and moving and d < 0.65)) and t <= self.approach_until)
+                    or sustained_near
+                    or sustained_dual
+                ):
+                    self.transition("TRANSFER", t)
             elif self.state == "TRANSFER":
-                if self.hold.ready("grip", near, t, self.cfg.grip_hold):
+                if self.hold.ready("grip", near or dual_palm_open, t, self.cfg.grip_hold):
                     self.transition("OVERDRIVE", t)
                     emitted.append(("overdrive", (), 1.3))
-                elif t - self.entered > self.cfg.transfer_window or (chest and d > self.cfg.grip_exit):
+                elif t - self.entered > self.cfg.transfer_window or (
+                    chest and d > self.cfg.grip_exit and not dual_palm_open
+                ):
                     self.transition("CAST", t)
             elif self.state == "OVERDRIVE":
-                if chest and d > self.cfg.grip_exit:
+                if chest and d > self.cfg.grip_exit and not dual_palm_open:
                     self.transition("CAST", t)
                 else:
                     support_lost = self.hold.ready("support_lost", not support.tracked, t, 0.30)
-                    outside = support.tracked and (
-                        d > self.cfg.grip_exit * 1.15 or (not is_extended_arm and not -0.20 <= along <= 1.40)
+                    outside = (
+                        support.tracked
+                        and not dual_palm_open
+                        and (
+                            d > self.cfg.grip_exit * 1.15
+                            or (not is_extended_arm and not -0.20 <= along <= 1.40)
+                        )
                     )
                     detached = self.hold.ready("detach", outside, t, 0.22)
                     if detached or support_lost:
@@ -231,12 +266,12 @@ class Circle:
             m = smoothstep(self.migration)
             center = tuple(a + (b - a) * m for a, b in zip(center, palm))
         hints = {
-            "OFF": "一手松握拳横放身前；胸前或颈前都可以，不要求90度",
-            "SUMMONING": "古星盘展开中…",
+            "OFF": "一手抬至胸前/颈前握拳或横臂召唤（双手垂放桌面不会误触）",
+            "SUMMONING": "极寒冰魄法阵展开中…",
             "READY": "另一手张开抬起开始施法；握拳停法，放下施法手收阵",
-            "CAST": "施法中：伸臂增强，召唤手搭在施法前臂或手腕上可突破 100%",
-            "TRANSFER": "星环共鸣中：保持搭臂即可解放过载阵列",
-            "OVERDRIVE": "过载施法 110–150%；松开恢复常态，放下施法手收阵",
+            "CAST": "施法中：伸臂增强；副手搭腕或双掌同时张开共鸣可突破 100% 过载",
+            "TRANSFER": "极寒冰魄共鸣中：保持搭腕或双掌同辉即可解放暴风雪过载",
+            "OVERDRIVE": "冰魔法暴风雪过载 110–150%；松开副手恢复常态，放下施法手收阵",
             "RETURN": "恢复常态施法，召唤手无需回胸",
             "FADING": "收阵中，放松后可重新召唤",
         }

@@ -379,41 +379,66 @@ def test_fire_short_dropout_preserves_two_second_fist_unlock():
     assert fire.hands["left"].unlocked
 
 
-def test_mirror_lowered_arms_without_hands_preserves_session():
+def test_mirror_lowered_arms_dissolves_while_wide_span_preserves_session():
+    # 1. Wide vertical opening (one hand above frame, one below) keeps mirror open
     e = open_mirror()
     for i in range(1, 10):
-        f = mirror_frame(0.85 + i * 0.05, 1.5, both=False)
+        f = mirror_frame(0.85 + i * 0.05, 1.0, both=False)
+        arms = (
+            replace(f.arms[0], hand_valid=False, upper_valid=True, elbow=(380.0, 210.0), wrist=(360.0, 80.0)),
+            replace(
+                f.arms[1], hand_valid=False, upper_valid=True, elbow=(620.0, 420.0), wrist=(640.0, 680.0)
+            ),
+        )
+        view, _ = e.update(replace(f, valid=True, arms=arms))
+    assert view.state not in ("CLOSING", "SHATTER", "IDLE") and view.visibility == 1.0
+
+    # 2. Both arms dropped straight down out of camera view automatically closes the mirror
+    for i in range(1, 10):
+        f = mirror_frame(1.40 + i * 0.05, 1.0, both=False)
         arms = tuple(
             replace(
                 a,
                 hand_valid=False,
                 upper_valid=True,
                 elbow=(a.shoulder[0], 390.0),
-                wrist=(a.shoulder[0], 640.0),
+                wrist=(a.shoulder[0], f.height + 40.0),
             )
             for a in f.arms
         )
         view, _ = e.update(replace(f, valid=True, arms=arms))
-    assert view.state not in ("CLOSING", "SHATTER", "IDLE")
-    assert view.visibility == 1 and not _
+    assert view.state in ("CLOSING", "IDLE")
 
 
-def test_water_body_only_lowered_arms_cannot_end_session():
+def test_water_lowered_arms_dissolves_while_wide_span_preserves_session():
+    # 1. Wide horizontal opening (one left, one right out of frame) keeps water ball
     w = water_ball()
-    for i in range(12):
-        f = hand_frame(0.6 + i * 0.1, None, None, valid=True)
-        arms = tuple(
-            replace(
-                a,
-                shoulder=(a.wrist[0], 200),
-                elbow=(a.wrist[0], 420),
-                wrist=(a.wrist[0], 640),
-                upper_valid=True,
-            )
-            for a in f.arms
+    for i in range(10):
+        f = hand_frame(0.6 + i * 0.05, None, None, valid=True)
+        arms = (
+            replace(f.arms[0], shoulder=(400, 250), elbow=(240, 280), wrist=(50, 300), upper_valid=True),
+            replace(f.arms[1], shoulder=(600, 250), elbow=(780, 280), wrist=(980, 300), upper_valid=True),
         )
         view, events = w.update(replace(f, arms=arms))
         assert w.enabled and view.visibility == 1 and not events
+
+    # 2. Both arms dropped straight down below frame dissolves the water ball
+    closed_events = []
+    for i in range(10):
+        f = hand_frame(1.2 + i * 0.05, None, None, valid=True)
+        arms = tuple(
+            replace(
+                a,
+                shoulder=(400 + idx * 200, 200),
+                elbow=(400 + idx * 200, 420),
+                wrist=(400 + idx * 200, f.height + 40),
+                upper_valid=True,
+            )
+            for idx, a in enumerate(f.arms)
+        )
+        view, events = w.update(replace(f, arms=arms))
+        closed_events.extend(events)
+    assert not w.enabled and any(e[0] == "water_close" for e in closed_events)
 
 
 def test_water_owner_loss_does_not_transfer_ball_to_other_hand():
@@ -457,3 +482,56 @@ def test_fire_unlock_pauses_uncertain_samples_without_counting_recovery_gap(unkn
     assert fire.hands["left"].unlocked and [e[0] for e in events] == ["fire_unlock"]
     _, events = fire.update(hand_frame(2.45, Shape.FIST, None))
     assert not events
+
+
+def test_water_levitates_above_palm_and_launches_from_direct_wrist_tap_or_fist_compress():
+    w = water_ball()
+    f0 = hand_frame(0.6, Shape.OPEN, None, valid=True, normal=(0, 0, -1))
+    view, _ = w.update(f0)
+    # Orb center must float visibly above the palm y-coordinate (300.0)
+    assert view.objects[0].center[1] < f0.arms[0].palm[1] - 20.0
+
+    # Support hand enters frame directly at the wrist (d < 0.34, without prior d > 0.42) with opposing normal
+    for i in range(4):
+        f = hand_frame(0.65 + i * 0.06, valid=True)
+        a = replace(f.arms[0], wrist=(480, 300), palm=(480, 300), normal=(0, -0.8, -0.6), upper_valid=True)
+        b = replace(f.arms[1], wrist=(492, 305), palm=(492, 305), normal=(0, 0.8, -0.6), upper_valid=True)
+        _, events = w.update(replace(f, arms=(a, b)))
+    assert w.shots and len(w.shots) == 1
+
+
+def test_fire_levitates_above_palm_and_tolerates_partial_fist_jitter():
+    fire = Fire()
+    fire.update(hand_frame(0))
+    for i in range(1, 20):
+        fire.update(hand_frame(i * 0.05, Shape.FIST, None))
+    # Inject a partial-fist jitter frame (openness = 0.28) during 2s unlock
+    jitter_f = hand_frame(1.0, Shape.FIST, None)
+    jitter_f = replace(jitter_f, arms=(replace(jitter_f.arms[0], openness=0.28), jitter_f.arms[1]))
+    fire.update(jitter_f)
+    for i in range(21, 44):
+        fire.update(hand_frame(i * 0.05, Shape.FIST, None))
+    assert fire.hands["left"].unlocked
+    fire.update(hand_frame(2.3, Shape.OPEN, None))
+    view, _ = fire.update(hand_frame(2.5, Shape.OPEN, None))
+    assert view.state == "BURNING"
+    assert view.objects[0].center[1] < 300.0 - 18.0
+
+
+def test_circle_rejects_unraised_lap_hands_and_supports_dual_palm_resonance():
+    e = Engine()
+    # Sitting with hands resting low on lap/desk (dy = 0.65 below chest) must NEVER false-summon
+    for i in range(20):
+        f = frame(i * 0.04, support=(480.0, 435.0), caster=(820.0, 440.0))
+        f = replace(f, arms=(replace(f.arms[0], elbow=(340.0, 430.0)), f.arms[1]))
+        view, _ = e.update(f)
+        assert view.state == "OFF"
+
+    # Once casting, raising and opening the second palm alongside the casting hand triggers zero-occlusion OVERDRIVE
+    e = casting()
+    for i in range(12):
+        t = 0.70 + i * 0.04
+        f = frame(t, support=(760.0, 340.0), caster=(850.0, 350.0))
+        f = replace(f, arms=(replace(f.arms[0], shape=Shape.OPEN, openness=0.9), f.arms[1]))
+        view, _ = e.update(f)
+    assert view.state == "OVERDRIVE" and view.intensity > 1.0

@@ -93,7 +93,7 @@ class SpellView:
     radius: float = 0.0
     mirror_angle: float = 0.0
     folded: bool = False
-    hint: str = "一手握拳横在胸前，召唤星环"
+    hint: str = "一手握拳横在胸前，召唤冰魔法法阵"
     quality: str = "等待人物"
     control_reliable: bool = True
     objects: tuple = ()

@@ -53,6 +53,11 @@ def main():
         "blade_index_retained": window.mode.itemData(1) == "blade",
         "blade_row_hidden": window.mode.view().isRowHidden(1),
         "default_endpoints": window.endpoints,
+        "ice_name": window.mode.itemText(0) == "冰魔法",
+        "element_hidden": window.element.isHidden(),
+        "internal_elements_retained": window.element.itemData(0) == "moon"
+        and window.element.itemData(1) == "lightning",
+        "lightning_row_hidden": window.element.view().isRowHidden(1),
     }
     window.destroyed.connect(lambda: result.update(window_destroyed_before_app_exit=True))
 
@@ -94,6 +99,10 @@ def main():
     (out / f"ui-smoke-{suffix}.json").write_text(json.dumps(result, ensure_ascii=False, indent=2), "utf-8")
     assert "error" not in result, result
     assert result["blade_index_retained"] and result["blade_row_hidden"]
+    assert all(
+        result[k]
+        for k in ("ice_name", "element_hidden", "internal_elements_retained", "lightning_row_hidden")
+    )
     assert result.get("window_destroyed_before_app_exit") and result["audio_disposed_before_app_exit"]
     assert result["preview_closed_cleanly"] and result["scene_cleared"] and result["new_pipeline"]
     assert result["reopened_preview"]["pipeline_error"] is None and result["final_workers_closed_cleanly"]

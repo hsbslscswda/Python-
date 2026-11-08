@@ -1,5 +1,7 @@
 """Geometry/frozen-content checks; no camera or claims of human acceptance."""
 
+import math
+
 import numpy as np
 
 from mirror_moon.domain import Event
@@ -36,3 +38,17 @@ def test_frozen_shard_uvs_stay_inside_the_same_mirror_and_are_seeded():
     triangles = uv.reshape(-1, 3, 2)
     assert abs(sum(area(p) for p in triangles) - area(np.array(MIRROR_OUTLINE)) / 4) < 1e-5
     assert np.array_equal(mesh, shard_mesh(event, (240, 163)))
+
+
+def test_rotated_mirror_shatter_velocity_rotates_with_mirror_angle():
+    e0 = Event(1, "shatter", 2, 3.0, ((300.0, 200.0), (120.0, 0.0)), seed=23)
+    e90 = Event(1, "shatter", 2, 3.0, ((300.0, 200.0), (120.0, math.pi / 2)), seed=23)
+    m0, m90 = shard_mesh(e0, (240, 163)), shard_mesh(e90, (240, 163))
+    # World offsets from center and velocity vectors must both reflect the 90-degree rotation
+    offset90 = m90[:, :2] - np.array([300.0, 200.0])
+    vel90 = m90[:, 4:6]
+    assert float(np.sum(offset90 * vel90)) > 0.0
+    assert not np.allclose(m0[:, 4:6], m90[:, 4:6])
+
+    # Equal seeds cancel the isotropic random kick; each triangle starts at its cell centroid.
+    assert np.allclose(m90[::3, 4:6] - m0[::3, 4:6], 0.9 * (m90[::3, :2] - m0[::3, :2]), atol=4e-5)

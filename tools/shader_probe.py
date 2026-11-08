@@ -2,6 +2,8 @@
 
 import argparse
 import json
+import math
+import time
 from pathlib import Path
 
 import cv2
@@ -38,7 +40,7 @@ def main():
     source = (ROOT / "assets/stage.frag").read_text("utf-8")
     vertices = np.array((-1, -1, 1, -1, -1, 1, 1, 1), dtype="f4")
 
-    def draw(fragment, rgb, size, **overrides):
+    def draw(fragment, rgb, size, timings=None, **overrides):
         program = ctx.program(vertex_shader=VERTEX, fragment_shader=fragment)
         buffer = ctx.buffer(vertices.tobytes())
         vao = ctx.vertex_array(program, [(buffer, "2f", "position")])
@@ -81,6 +83,19 @@ def main():
         for name, value in values.items():
             if name in program:
                 program[name].value = value
+        if timings is not None:
+            for _ in range(3):
+                vao.render(moderngl.TRIANGLE_STRIP)
+                ctx.finish()
+            samples = []
+            for _ in range(12):
+                started = time.perf_counter()
+                vao.render(moderngl.TRIANGLE_STRIP)
+                ctx.finish()
+                samples.append((time.perf_counter() - started) * 1000)
+            timings.update(
+                p50_ms=float(np.median(samples)), p95_ms=float(np.percentile(samples, 95)), samples_ms=samples
+            )
         vao.render(moderngl.TRIANGLE_STRIP)
         pixels = (
             np.frombuffer(fbo.read(components=3, alignment=1), dtype="uint8")
@@ -119,38 +134,67 @@ def main():
     y, x = np.mgrid[:360, :640]
     rgb = np.stack((40 + x / 5, 30 + y / 3, 60 + (x + y) / 8), axis=-1).astype("uint8")
     rows = []
-    for mirrored in (False, True):
-        for folded in (False, True):
-            for angle in (0.0, 0.8):
-                cpu = mirror_texture(rgb, (320.0, 180.0), 120.0, angle, folded, 100.0, 12.0)
-                h, w = cpu.shape[:2]
-                gpu = draw(
-                    patch,
-                    rgb,
-                    (w, h),
-                    mode=2,
-                    radius=120.0,
-                    mirror_angle=angle,
-                    folded=int(folded),
-                    mirrored=int(mirrored),
-                )
-                px, py = np.meshgrid(
-                    np.linspace(-120, 120, w), np.linspace(-120 * MIRROR_ASPECT, 120 * MIRROR_ASPECT, h)
-                )
-                interior = np.maximum(abs(px) - 120, abs(py) - 120 * MIRROR_ASPECT) < -35
-                error = np.abs(cpu.astype("float32") - gpu.astype("float32"))[interior]
-                median, p95 = float(np.median(error)), float(np.percentile(error, 95))
-                rows.append(
-                    {
-                        "mirrored": mirrored,
-                        "folded": folded,
-                        "angle": angle,
-                        "channel_error_median": median,
-                        "channel_error_p95": p95,
-                    }
-                )
-                assert median <= 2.0 and p95 <= 5.0, rows
+    for test_radius in (12.0, 120.0, 360.0):
+        for mirrored in (False, True):
+            for folded in (False, True):
+                for angle in (0.0, 0.8):
+                    cpu = mirror_texture(rgb, (320.0, 180.0), test_radius, angle, folded, 100.0, 12.0)
+                    h, w = cpu.shape[:2]
+                    gpu = draw(
+                        patch,
+                        rgb,
+                        (w, h),
+                        mode=2,
+                        radius=test_radius,
+                        mirror_angle=angle,
+                        folded=int(folded),
+                        mirrored=int(mirrored),
+                    )
+                    px, py = np.meshgrid(
+                        np.linspace(-test_radius, test_radius, w),
+                        np.linspace(-test_radius * MIRROR_ASPECT, test_radius * MIRROR_ASPECT, h),
+                    )
+                    interior = (
+                        np.maximum(abs(px) - test_radius, abs(py) - test_radius * MIRROR_ASPECT)
+                        < -min(35, test_radius * 0.28)
+                    ) & (abs(px) / test_radius + abs(py) / (test_radius * MIRROR_ASPECT) < 1.45)
+                    # A large/rotated mirror extends off camera; only displayed fragments can be compared.
+                    world_x = 320.0 + math.cos(angle) * px - math.sin(angle) * py
+                    world_y = 180.0 + math.sin(angle) * px + math.cos(angle) * py
+                    interior &= (world_x > 1) & (world_x < 639) & (world_y > 1) & (world_y < 359)
+                    error = np.abs(cpu.astype("float32") - gpu.astype("float32"))[interior]
+                    median, p95 = float(np.median(error)), float(np.percentile(error, 95))
+                    rows.append(
+                        {
+                            "radius": test_radius,
+                            "mirrored": mirrored,
+                            "folded": folded,
+                            "angle": angle,
+                            "channel_error_median": median,
+                            "channel_error_p95": p95,
+                        }
+                    )
+                    assert median <= 2.0 and p95 <= 5.0, rows
     report["cpu_gl_mirror_interior_parity"] = rows
+    if args.comparison:
+        runs = []
+        for quality in (0, 1, 2):
+            for label, fragment in (("v0.4.2", args.comparison.read_text("utf-8")), ("v0.4.3", source)):
+                timing = {"version": label, "quality": quality}
+                draw(
+                    fragment,
+                    flat,
+                    (1280, 720),
+                    timings=timing,
+                    intensity=1.4,
+                    migration=0.65,
+                    quality=quality,
+                )
+                runs.append(timing)
+        report["serialized_stage_draw_1280x720"] = {
+            "method": "3 warmups + 12 draws, ctx.finish; excludes compile, Qt, camera, postprocessing; not displayed FPS",
+            "runs": runs,
+        }
     (args.output / "results.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), "utf-8")
     print(json.dumps(report))
     ctx.release()

@@ -27,7 +27,9 @@ def shard_mesh(event, size):
     out = []
     for polygon in mirror_cells(event.seed):
         midpoint = polygon.mean(axis=0)
-        velocity = midpoint * (radius * 0.9) + rng.normal(0.0, 40.0, 2)
+        # Rotate cell outward velocity by the mirror's world angle so shards fly radially in rotated mirror space!
+        world_offset = rotation @ (midpoint * np.array((radius, radius * MIRROR_ASPECT)))
+        velocity = world_offset * 0.9 + rng.normal(0.0, 40.0, 2)
         for i in range(len(polygon)):
             for q in (midpoint, polygon[i], polygon[(i + 1) % len(polygon)]):
                 local = q * np.array((radius, radius * MIRROR_ASPECT))
@@ -54,26 +56,79 @@ class RenderState:
         self.paint_stamps = deque(maxlen=1800)
         self.renderer_info = "兼容画质 · QPainter"
         self.recorder = None
-        self.anchor_filters = [OneEuro(2.0, 0.01) for _ in range(3)]
+        self.anchor_filters = [OneEuro(1.6, 0.008) for _ in range(4)]
+        self.pose_filters = [OneEuro(1.4, 0.006) for _ in range(5)]
+        self.aim_filters = [OneEuro(1.1, 0.004) for _ in range(2)]
+        self.display_center = None
+        self.display_radius = None
+        self.display_angle = None
+        self.last_interp_t = None
+
+    def _reset_filters(self):
+        self.anchor_filters = [OneEuro(1.6, 0.008) for _ in range(4)]
+        self.pose_filters = [OneEuro(1.4, 0.006) for _ in range(5)]
+        self.aim_filters = [OneEuro(1.1, 0.004) for _ in range(2)]
+        self.display_center = None
+        self.display_radius = None
+        self.display_angle = None
+        self.last_interp_t = None
 
     def accept(self, scene):
         if self.scene and scene.spell.mode != self.scene.spell.mode:
             self.reset_effects()
-            self.anchor_filters = [OneEuro(2.0, 0.01) for _ in range(3)]
+            self._reset_filters()
         x, y = scene.spell.center
         radius = scene.spell.radius
+        angle = scene.spell.mirror_angle
         t = scene.features.timestamp
-        # Mirror already has one geometry smoother in its state machine.
+        fx = self.anchor_filters[0](x, t)
+        fy = self.anchor_filters[1](y, t)
+        fr = self.anchor_filters[2](radius, t)
+        # Mirror geometry is already damped in its state machine; avoid another slow filter.
         view = (
             scene.spell
             if scene.spell.mode == "mirror"
-            else replace(
-                scene.spell,
-                center=(self.anchor_filters[0](x, t), self.anchor_filters[1](y, t)),
-                radius=self.anchor_filters[2](radius, t),
-            )
+            else replace(scene.spell, center=(fx, fy), radius=fr, mirror_angle=angle)
         )
-        self.scene, self.image = replace(scene, spell=view), qimage(scene.frame.rgb)
+
+        f = scene.features
+        cx = self.pose_filters[0](f.chest[0], t)
+        cy = self.pose_filters[1](f.chest[1], t)
+        fyaw = self.pose_filters[2](f.body_yaw or 0.0, t)
+        smoothed_features = replace(f, chest=(cx, cy), body_yaw=fyaw)
+        self.scene, self.image = (
+            replace(scene, spell=view, features=smoothed_features),
+            qimage(scene.frame.rgb),
+        )
+
+    def interpolated_view(self, now):
+        """Time-based display easing between tracking updates; this does not predict missing motion."""
+        spell = self.scene.spell
+        if spell.visibility <= 0.001 or self.last_interp_t is None or now <= self.last_interp_t:
+            self.display_center = spell.center
+            self.display_radius = spell.radius
+            self.display_angle = spell.mirror_angle
+            self.last_interp_t = now
+            return spell
+        dt = min(0.08, now - self.last_interp_t)
+        self.last_interp_t = now
+        k = 1.0 - math.exp(-dt * 32.0)
+        cx, cy = self.display_center or spell.center
+        tx, ty = spell.center
+        if math.hypot(tx - cx, ty - cy) > 180.0:
+            self.display_center = (tx, ty)
+        else:
+            self.display_center = (cx + (tx - cx) * k, cy + (ty - cy) * k)
+        cr = self.display_radius if self.display_radius is not None else spell.radius
+        self.display_radius = cr + (spell.radius - cr) * k
+        ca = self.display_angle if self.display_angle is not None else spell.mirror_angle
+        self.display_angle = ca + (spell.mirror_angle - ca) * k
+        return replace(
+            spell,
+            center=self.display_center,
+            radius=self.display_radius,
+            mirror_angle=self.display_angle,
+        )
 
     def reset_effects(self):
         self.slashes.clear()
@@ -222,7 +277,8 @@ class GLStage(QOpenGLWidget):
                 self._ensure_post((key[1], key[2]))
                 self.scene_fbo.use()
                 self.ctx.viewport = (0, 0, key[1], key[2])
-            rgb, spell, f = scene.frame.rgb, scene.spell, scene.features
+            rgb, f = scene.frame.rgb, scene.features
+            spell = d.interpolated_view(started)
             if self.frame_id != scene.frame.frame_id:
                 size = (rgb.shape[1], rgb.shape[0])
                 if self.camera_texture is None or self.camera_texture.size != size:
@@ -233,11 +289,16 @@ class GLStage(QOpenGLWidget):
                 self.camera_texture.write(rgb.tobytes(), alignment=1)
                 self.frame_id = scene.frame.frame_id
             self.camera_texture.use(0)
+            raw_palm = f.arm(spell.caster).wrist if spell.caster else f.chest
+            px_palm = (
+                d.pose_filters[3](raw_palm[0], f.timestamp),
+                d.pose_filters[4](raw_palm[1], f.timestamp),
+            )
             values = {
                 "viewport": (key[1], key[2]),
                 "source_size": (f.width, f.height),
                 "center": spell.center,
-                "palm": f.arm(spell.caster).wrist if spell.caster else f.chest,
+                "palm": px_palm,
                 "chest": f.chest,
                 "shoulder": f.scale,
                 "radius": spell.radius,
@@ -256,16 +317,14 @@ class GLStage(QOpenGLWidget):
                 "mirror_time": f.timestamp % 4096,
                 "mirror_closing": int(spell.state == "CLOSING"),
             }
-            caster = f.arm(spell.caster) if spell.caster else f.arms[1]
-            arm_dx = (caster.wrist[0] - caster.shoulder[0]) / max(40.0, f.scale)
-            arm_dy = (caster.wrist[1] - caster.shoulder[1]) / max(40.0, f.scale)
+            arm_dx = (px_palm[0] - f.chest[0]) / max(40.0, f.scale)
+            arm_dy = (px_palm[1] - f.chest[1]) / max(40.0, f.scale)
             yaw_val = f.body_yaw or 0.0
-            nx = math.sin(yaw_val) * 0.65 + max(-1.15, min(1.15, arm_dx * 0.55))
-            ny = max(-0.65, min(0.65, arm_dy * 0.38 - 0.04))
-            if caster.normal is not None:
-                nx = nx * 0.72 + caster.normal[0] * 0.28
-                ny = ny * 0.78 + caster.normal[1] * 0.22
-            nz = -math.sqrt(max(0.08, 1.0 - min(0.92, nx * nx + ny * ny)))
+            nx_raw = math.sin(yaw_val) * 0.35 + max(-0.85, min(0.85, arm_dx * 0.45))
+            ny_raw = max(-0.55, min(0.55, arm_dy * 0.32 - 0.05))
+            nx = d.aim_filters[0](nx_raw, f.timestamp)
+            ny = d.aim_filters[1](ny_raw, f.timestamp)
+            nz = -math.sqrt(max(0.15, 1.0 - min(0.85, nx * nx + ny * ny)))
             values["cast_direction"] = (nx, ny, nz)
             views = spell.objects[:12]
             values["object_count"] = len(views)
@@ -282,7 +341,7 @@ class GLStage(QOpenGLWidget):
             paths, params = np.zeros((8, 4), "f4"), np.zeros((8, 2), "f4")
             for i, event in enumerate(live):
                 paths[i] = (*event.points[0], *event.points[-1])
-                params[i] = (started - event.timestamp, event.strength)
+                params[i] = (max(0.0, started - event.timestamp), event.strength)
             self.program["slash_count"].value = len(live)
             self.program["slashes"].write(paths.tobytes())
             self.program["slash_data"].write(params.tobytes())
@@ -311,7 +370,7 @@ class GLStage(QOpenGLWidget):
                 for name, value in {
                     "viewport": (key[1], key[2]),
                     "source_size": (f.width, f.height),
-                    "age": started - event.timestamp,
+                    "age": max(0.0, started - event.timestamp),
                     "mirrored": int(d.mirrored),
                 }.items():
                     self.shard_program[name].value = value
@@ -449,7 +508,7 @@ class PainterStage(QWidget):
             p.save()
             source_transform(p, d, self.width(), self.height())
             p.drawImage(0, 0, d.image)
-            view = d.scene.spell
+            view = d.interpolated_view(started)
             color = QColor("#ad8344")
             color.setAlphaF(min(1.0, view.visibility * d.gain))
             p.setPen(QPen(color, 3.5))
@@ -503,7 +562,14 @@ class PainterStage(QWidget):
                     view.radius * 2,
                     view.radius * 2 * MIRROR_ASPECT,
                 )
-                key = (d.scene.features.frame_id, view.center, view.radius, view.mirror_angle, view.folded)
+                key = (
+                    d.scene.features.frame_id,
+                    round(view.center[0], 1),
+                    round(view.center[1], 1),
+                    round(view.radius, 1),
+                    round(view.mirror_angle, 2),
+                    view.folded,
+                )
                 if self.mirror_patch_key != key:
                     self.mirror_patch = mirror_texture(
                         d.scene.frame.rgb,
@@ -532,7 +598,7 @@ class PainterStage(QWidget):
             for obj in view.objects:
                 draw_object(p, obj, started)
             for e in d.slashes:
-                age = started - e.timestamp
+                age = max(0.0, started - e.timestamp)
                 if age < 0.80:
                     c = QColor("#d1efff")
                     c.setAlphaF(max(0.0, 1.0 - age / 0.80))
@@ -546,7 +612,7 @@ class PainterStage(QWidget):
                         -1, 3, 6
                     )
                     self.mesh_event = e.event_id
-                age = started - e.timestamp
+                age = max(0.0, started - e.timestamp)
                 frozen = qimage(e.image)
                 p.setOpacity(max(0.0, 1.0 - age / 0.85))
                 for tri in self.mesh:
@@ -614,13 +680,18 @@ def draw_object(p, obj, now):
             )
     elif obj.kind == 4:
         for i in range(4):
-            path = QPainterPath(QPointF(x - r * 0.6, y))
-            sway = math.sin(now * 7 + i) * r * 0.4
+            path = QPainterPath(QPointF(x - r * 0.55, y + r * 0.35))
+            sway = math.sin(now * 7 + i) * r * 0.35
             path.cubicTo(
-                x - r, y - r * 1.6, x + sway, y - r * (2.5 + i * 0.25), x + sway, y - r * (3 + i * 0.15)
+                x - r * 0.85,
+                y - r * 0.8,
+                x + sway,
+                y - r * (1.7 + i * 0.2),
+                x + sway,
+                y - r * (2.1 + i * 0.15),
             )
-            path.cubicTo(x + r * 0.9, y - r * 1.7, x + r * 0.9, y - r * 0.5, x + r * 0.6, y)
+            path.cubicTo(x + r * 0.85, y - r * 0.9, x + r * 0.75, y + r * 0.1, x + r * 0.55, y + r * 0.35)
             path.closeSubpath()
-            p.setBrush(QColor(255, 80 + i * 33, 10, 100))
+            p.setBrush(QColor(255, 85 + i * 35, 15, 115))
             p.drawPath(path)
     p.restore()

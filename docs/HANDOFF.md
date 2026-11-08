@@ -1,71 +1,46 @@
-# 镜中取月 v0.4.2 工程交接
+# 镜中取月 v0.4.3 工程交接
 
-更新：2026-11-08。持续职责与每轮流程见 [WORKFLOW.md](WORKFLOW.md)，恢复入口见根目录AGENTS.md。当前为持续迭代的可运行候选，未宣称课程最终验收。
+更新2026-11-08。持续职责/固定交付流程见[WORKFLOW.md](WORKFLOW.md)，最新规则见[SPEC.md末尾](SPEC.md)，逐项判断见[GEMINI_REVIEW_RESPONSE.md](GEMINI_REVIEW_RESPONSE.md)。Codex为主要实现者和默认唯一集成者；用户只负责转交、真实动作和视觉反馈，Gemini意见由Codex结合代码/证据处理。
 
-## 最新需求与本轮处理
+## 最新需求与当前版本
 
-v0.4.2补充：已修复实际显示镜像/旋转与CPU冻结、碎片网格坐标不一致。旧探针遗漏的路径已先失败再修复，八组合保持原误差阈值通过；其余交互/视觉实现沿用已完成v0.4.1。
+最新输入是Downloads的`镜中取月_v0.4.3_Gemini特效与交互终极升级包 (1).zip`，SHA d3ad651bad5ef932c8153225d4935422ab3338a09624b47f9ddab0c635a48083；基线v0.4.2/f458d6c8fcef5959b206f5e47d66668fdcb57a42。非docs运行改动已直接导入并修正原生回归；保留原包、展开文件、覆盖前备份及差异于local/incoming-v043。候选旧文档“月华/取消冰雪”不采用，当前用户明确冰魔法要求优先。
 
-用户提供的是Gemini v0.4.1特效/交互候选；集成v0.4.1后追加默认镜像显示修补，最终交付v0.4.2。原包、差异和覆盖前文件已保留于local/incoming-v041。本机原样133测试通过仍有GL回退；Codex已修正并完成本轮141测试、原生与包体检查。逐项接受/调整/不采用/延期见 [GEMINI_REVIEW_RESPONSE.md](GEMINI_REVIEW_RESPONSE.md)，摘要/来源见UPGRADE_IMPORT_v0.4.2.json。
+当前运行/复审版本v0.4.3，分支codex/mirror-moon；固定提交及最终EXE SHA写入交付/审查包BASELINE.json与outputs/交付校验_v0.4.3.json。后续仅文档提交记录实际发布结果，运行标签不移动。v0.4.0/172977f、v0.4.1/c3d70f6、v0.4.2/f458d6c及各自包体全部保留。
 
-- 保留星环、镜界、水球、独立双掌火焰；月刃继续隐藏菜单，内部index1和测试保留。普通名称、月华/雷霆保留，不采用候选的复杂改名/单冰系锁定。
-- 采用冰晶式定向释放、透明水球、火焰细节、切角折镜与实际Voronoi冻结碎片；修正UV/元素绑定、14处逆序smoothstep、CPU镜内采样与Windows默认编码读取。
-- 水球仍为任意掌向握拳→摊开、惯性跟随、双掌扩张、搭腕/前臂发射、拍掌自然结束；丢手保留、暂停冻结，明确切换/重置/关摄像头清理。副手放下只退出缩放，不关闭；没有单手快移自动发射或自动换主人。
-- 火焰每手首次张开→有效握拳2秒→再张开；0.28秒短掉点暂停，缺失/UNKNOWN/恢复间隔不计时；半握收缩、全拳或翻掌向下熄灭，张开重燃。左右独立、无身体依赖。
-- 星环保持坐姿/颈前横臂、暖阵冷色魔力、握拳停法留阵/放下收阵。手动切换免垂手。镜界出画/丢手保持，仅明确慢收/快碎等结束，不增加垂手自动关闭。
+必须保留：冰魔法名称和三层冰枪/16冰刺/冰雷/三螺旋/三震波/三种雪花及扇外伴生物，隐藏雷霆UI但内部circle/moon/元素索引1保留，前向限幅/胸前门槛/双掌共鸣+搭腕；镜水双手下垂出画连续0.30秒消散，大开合一上一下/一左一右出画保持，纯追踪丢失保持；玄银蓝宝纯净八角镜；水火掌上悬空；水三发射通道、主人锁定、不把OTHER当缩放；火焰有效拳累计/临界拳暂停/0.28秒缺失宽限/左右独立。旧历史“仅拍掌”“双臂放下也永不关闭”“月华/雷霆可选”已被本轮覆盖。
 
-## 版本与实际路径
+## 实际路径与启动
 
-当前运行/审查版本为v0.4.2；固定提交为f458d6c8fcef5959b206f5e47d66668fdcb57a42，见BASELINE.json，后续仅文档提交不移动版本标签。上一运行基线v0.4.1为c3d70f6，v0.4.0为172977f，本轮开始时HEAD为c3d70f6。分支codex/mirror-moon，v0.4.0/v0.4.1所有包与标签完整保留。
+- 仓库：`C:\Users\hsbsl\Documents\Codex\2026-11-07\https-github-com-hsbslscswda-python-invitations\work\Python-`；当前聊天cwd不是仓库。
+- 本机启动：`C:\Users\hsbsl\Documents\Codex\2026-11-07\https-github-com-hsbslscswda-python-invitations\outputs/双击启动镜中取月.lnk`，最终验证后指向v0.4.3；或直接`C:\Users\hsbsl\Documents\Codex\2026-11-07\https-github-com-hsbslscswda-python-invitations\outputs\镜中取月_v0.4.3/启动摄像头.cmd`（调用同目录MirrorMoon.exe）。标题应为v0.4.3，C关闭摄像头，Esc重置，空格暂停，F11全屏。
+- Windows完整解压包：`C:\Users\hsbsl\Documents\Codex\2026-11-07\https-github-com-hsbslscswda-python-invitations\outputs/镜中取月_Windows_v0.4.3.zip`；源码包：`C:\Users\hsbsl\Documents\Codex\2026-11-07\https-github-com-hsbslscswda-python-invitations\outputs/镜中取月_源码_v0.4.3.zip`。
+- Gemini上传文件：`C:\Users\hsbsl\Documents\Codex\2026-11-07\https-github-com-hsbslscswda-python-invitations\outputs/发给Gemini_v0.4.3/镜中取月_v0.4.3_Gemini审查包.zip`；配套文字：同目录`复制给Gemini.txt`全文。无需用户拆源码/写问题/找日志。
+- 实测/失败/构造图：`C:\Users\hsbsl\Documents\Codex\2026-11-07\https-github-com-hsbslscswda-python-invitations\work\Python-\local\incoming-v043`；最终摘要：`C:\Users\hsbsl\Documents\Codex\2026-11-07\https-github-com-hsbslscswda-python-invitations\outputs/验证记录_v0.4.3.md`。
+- Python3.12 `.venv`，依赖锁requirements-lock.txt；GLSL资源必须显式UTF-8读取，不能依赖-X utf8掩盖Windows GBK问题。模型和许可在assets/models及包体第三方许可目录。
+- 用户诊断：`%LOCALAPPDATA%/MirrorMoon/diagnostics`。测试前点“记录日志”，结束停止；用户只需法术/现象/大致时段，Codex自行定位。审查包无个人录像、原始JSONL、模型权重或EXE。
 
-项目根目录：C:\Users\hsbsl\Documents\Codex\2026-11-07\https-github-com-hsbslscswda-python-invitations。
+## 软件验证 / 待真人分开
 
-| 用途 | 相对项目根目录 |
-|---|---|
-| 实际Git仓库 | work/Python- |
-| 主要启动入口 | outputs/双击启动镜中取月.lnk（已指向v0.4.2） |
-| 摄像头程序 | outputs/镜中取月_v0.4.2/启动摄像头.cmd |
-| 兼容画质 | outputs/镜中取月_v0.4.2/兼容画质.cmd |
-| 程序本体 | outputs/镜中取月_v0.4.2/MirrorMoon.exe |
-| 固定版本/EXE摘要 | outputs/镜中取月_v0.4.2/BASELINE.json |
-| Windows/源码ZIP | outputs/镜中取月_Windows_v0.4.2.zip、镜中取月_源码_v0.4.2.zip |
-| Gemini审查包 | outputs/发给Gemini_v0.4.2/镜中取月_v0.4.2_Gemini审查包.zip |
-| 粘贴提示词 | outputs/发给Gemini_v0.4.2/复制给Gemini.txt |
-| 交付/远程记录 | outputs/交付校验_v0.4.2.json、GitHub下载_v0.4.2.json（发布后生成） |
-| 原始软件证据 | work/Python-/local/incoming-v041 |
-| 用户诊断日志 | %LOCALAPPDATA%/MirrorMoon/diagnostics |
+本轮157 pytest、Ruff/compileall、严格标准/高GL十次缩放全屏和冰/镜/刃构造动作、兼容动作、水火完整事件、摄像头启停重开、最终EXE七项、真实ZIP解压同EXE检查均通过。镜面三尺寸24组合p95=1/255（原八组中位0）；最终EXE SHA `36b56c3c7f3f97dff0a94dccd015e2ae0f7647427db02e01767c3f38bd98526c`。性能与失败证据见VALIDATION顶部，不拿退出0或测试数量当GL成功。识别仍约15Hz，低于20Hz目标；新图形脚本约58次/秒是Qt提交率，非显示FPS保证。
 
-旧聊天cwd不是Git仓库，不在空目录重建。完整解压Windows ZIP并保留_internal，无需Python；开发环境在仓库.venv，Python3.12/依赖锁/模型沿用。程序运行不依赖LLM或网络。
-
-EXE SHA256：b9370ea036c372ab7d795eb7ca7cc78a1b16d133581d1922a328e2ac0a2e78e1。快捷方式参数--autostart --diagnostics。用户只需点记录日志并反馈动作/大致时间，Codex自动定位和分析，不让用户寻找/整理原始日志。
-
-## 已验证与待验证
-
-当前141 pytest、Ruff、compileall、diff检查；真实GL十次缩放/全屏及完整动作、QPainter同序列；水球与双火事件；八组按真实网格姿态、包含镜像开/关的CPU/GL误差中位0、p95为1/255；实际源摄像头关闭重开；最终中文EXE七项及真ZIP解压运行均有记录。首次候选GL回退及第一构建默认编码失败也保留。详见 [VALIDATION.md](VALIDATION.md) 顶部本轮段，不能把旧段当本轮测量。
-
-最终EXE同帧跟踪14.89Hz、ZIP14.89Hz，不保证持续20Hz。源程序本次停止0.879秒；v0.4.1曾2.406秒，不能保证所有设备1.5秒。本轮短时EXE约1.178/1.211秒。Qt提交率不是显示FPS，read后软件年龄不是完整端到端延迟。
-
-真人手势/坐姿/方向、斜向扩张和搭腕、双人命中、拍掌误停、镜界重获及审美待复验。没有27/30、各系统5分钟负样本、30分钟稳定性/内存曲线、其它GPU和真实延迟验收。5cm/60cm等为单目/艺术近似，非精确深度或完整流体。D、课程报告、真实分工、教师模板和真人视频未完成。
+真人动作、主观视觉/亮度、多人碰撞、动作成功率和长时稳定性待验；课程D扩展和最终报告/成员/模板/视频未完成。
 
 ## 发布状态
 
-v0.4.2已于2026-11-08 00:23:06（Asia/Singapore）公开为预发行：[发布页](https://github.com/hsbslscswda/Python-/releases/tag/v0.4.2)。release ID为437689890，draft=false、prerelease=true，标签固定提交f458d6c8fcef5959b206f5e47d66668fdcb57a42。三个附件均uploaded，服务器大小/SHA256与本地交付清单一致；详情见outputs/GitHub下载_v0.4.2.json。
+冻结前状态：本地最终EXE已通过验证；待把本轮源码/证据提交推送，冻结三ZIP和复审基线，再按既有授权完成独立v0.4.3预发行。实际结果以仓库后续HANDOFF更新和`C:\Users\hsbsl\Documents\Codex\2026-11-07\https-github-com-hsbslscswda-python-invitations\outputs/GitHub下载_v0.4.3.json`为准；未写入该文件前不能声称新远程发布成功。沿用现有分支正常推送，不强推、不删除旧release/标签、不重传摘要一致附件。
 
-v0.4.0（ID437538423、172977f）和v0.4.1（ID437681562、c3d70f6）均保留。v0.4.1已标注镜像纹样问题，优先使用v0.4.2；没有覆盖旧工件或移动旧标签。后续文档提交不改变本次运行基线。包内文档冻结于打包时，当前仓库HANDOFF记录最终公开状态。
+已核验历史v0.4.2公开预发行ID437689890，三个附件完整；v0.4.1 ID437681562、v0.4.0 ID437538423保留。旧发布并无当前缺失工作，不重建/重传。
 
-## Gemini进度与双方待办
+## 用户下一步：最短自测
 
-已收到并逐项处理本次原始升级ZIP。新的固定基线复审包已生成并核对，最多三个问题为：镜面/冻结碎片映射；水球与火焰时序/误触边界；新shader明暗、透明度、成本与资源回归。没有收到针对集成后v0.4.2的复审；原候选自述测试不等于本机GPU或真人通过。审查包只含相关源码/差异、候选说明、需求、测试与构造画面，不含个人录像/原始动作日志。
+1. 打开上述启动入口，确认v0.4.3，点记录日志；坐姿也可用，冰/镜尽量让肩肘入画，水火仅手也可用。双手放腿/桌面几秒，冰魔法不应误召唤；抬至胸/颈前握拳唤阵，另一手开掌前伸。测试副手搭腕与两掌同时打开的过载，观察是否正面稳定、层次和亮度合适。
+2. 镜界：双手靠近稍停再拉开，缩放/旋转/折镜；分别大开合出画和双手自然向下出画，前者保持、后者约0.30秒开始消散。遮住低位但仍在画内的手不应关闭。再开后快合碎镜，看图像与方向是否连续；慢合停住可收镜。
+3. 水球：握拳→摊开，观察球明显悬空与惯性；双掌夹球保持后拉开（含斜向）；分别试副手从画外直接搭腕、近腕握拳助推、主人手握拳压缩发射。试拍掌结束和下垂出画结束、大开合保持；留意误发射和缩放跳变。
+4. 火焰：左右分别张开→握拳累计2秒→张开，再同时点火；半握缩小、短遮挡、全拳/翻掌向下熄灭，观察球形底部、悬空间隙、暗部与火舌是否合意。完成停止记录并按C；只反馈法术/现象/大致时间。
 
-用户下一步：运行v0.4.2做下面短测，反馈法术/现象/大致时段；把上述审查ZIP及提示词全文交给Gemini，再转回完整回复与候选文件。源码、日志摘要与问题由Codex整理。
+## Gemini进度与工程下一步
 
-Codex下一步：本轮冻结、快捷方式、审查材料及发布均已完成；收到真实反馈后自动提取本机诊断、复现并修复；收到Gemini意见后逐项判断与验证。独立技术工作继续，只有真实动作/审美/缺失授权才等待。
+已收到并逐项处理原候选，结论见GEMINI_REVIEW_RESPONSE；新固定v0.4.3复审包/提示词将随交付冻结，最多三个重点：镜面插值/旋转碎片/出画；水发射缩放与火解锁边界；完整冰系及标准/高画质成本/过曝。未收到集成后v0.4.3复审，不能写成Gemini已验收。
 
-## 最短自测
-
-1. 双击主要启动入口，确认标题v0.4.2，点记录日志。星环/镜界尽量让肩肘入画；水火只需手，坐姿可用，手动切换免垂手。
-2. 水球：握拳→摊开，慢移/急停看惯性和折射；双掌相对拉大（包括斜向），另一手搭腕/前臂发射。遮手再回来应保留，副手放下不继续拉大也不关闭，拍掌结束；暂停应冻结。
-3. 火焰：左右手分别张开→握拳满2秒→张开；再同时点火。短遮挡后继续，半握缩小、全拳/翻掌向下熄灭，张开重燃。观察火舌、圆润底部和高亮是否合适。
-4. 星环：坐姿胸前/颈前横臂，另一手开掌；观察暖阵与冷蓝/紫定向冰晶式释放物，搭臂过载。握拳停法留阵，放下收阵，检查新视觉是否仍过亮/遮脸。
-5. 镜界：双手稍靠近停顿再拉开，缩放/旋转/折镜；手出画、遮手和双臂放下均不自动关闭，回来继续。慢合停住关闭，另开后快合碎镜，查看不规则片是否保留冻结画面。
-6. 停止记录并按C关闭摄像头，用户看灯是否熄灭；只回报动作、现象/视觉感受及大致时间。Codex自动找日志，不默认公开个人资料。Esc重置、空格暂停、F11全屏。
+用户：上传唯一新审查ZIP并粘贴配套提示词全文，转回完整回复及候选文件；做上述真实动作并反馈。Codex：先完成冻结与远程发布，随后按真实反馈自动分析本机日志、复现修复，按Gemini意见逐项接受/调整/不采用/延期并更新证据。仅真实动作/审美/缺少授权才等待；远程故障不阻止本地运行或审查。

@@ -5,7 +5,7 @@ import math
 from dataclasses import replace
 
 from .domain import Arm, Features, Shape
-from .geometry import OneEuro, angle3, distance
+from .geometry import OneEuro, angle3, distance, smoothstep
 
 
 def palm_geometry(hand, world, side):
@@ -55,7 +55,7 @@ def classify(points, previous=Shape.UNKNOWN, world=None):
 class FeatureExtractor:
     def __init__(self):
         self.scale_filter = OneEuro(1.2, 0.003)
-        self.yaw_filter = OneEuro(0.8, 0.002)
+        self.yaw_filter = OneEuro(0.45, 0.001)
         self.previous = {}
         self.last_seen = {}
         self.palm_sizes = {}
@@ -96,15 +96,13 @@ class FeatureExtractor:
                 continue
             visible = [p for p in ps if min(p.visibility, p.presence) > 0.4]
             if len(visible) >= 6:
-                people.append(
-                    (
-                        min(p.x for p in visible) * width,
-                        min(p.y for p in visible) * height,
-                        max(p.x for p in visible) * width,
-                        max(p.y for p in visible) * height,
-                        abs(ps[11].x - ps[12].x) * width,
-                    )
-                )
+                left_x = min(p.x for p in visible) * width
+                top_y = min(p.y for p in visible) * height
+                right_x = max(p.x for p in visible) * width
+                bot_y = max(p.y for p in visible) * height
+                sh_span = abs(ps[11].x - ps[12].x) * width
+                est_shoulder = max(sh_span, (bot_y - top_y) * 0.22)
+                people.append((left_x, top_y, right_x, bot_y, est_shoulder))
 
         def finite(i):
             return bool(points) and all(math.isfinite(getattr(points[i], axis)) for axis in ("x", "y", "z"))
@@ -267,7 +265,15 @@ class FeatureExtractor:
             image_wrist = hand[0] if hand else xy(wrist)
             upper_valid = reliable(shoulder, 0.40) and reliable(elbow, 0.45)
             if upper_valid and (hand or reliable(wrist, 0.50)):
-                self.arm_offsets[side] = (image_wrist[0] - xy(elbow)[0], image_wrist[1] - xy(elbow)[1])
+                new_offset = (image_wrist[0] - xy(elbow)[0], image_wrist[1] - xy(elbow)[1])
+                if side in self.arm_offsets:
+                    old_off = self.arm_offsets[side]
+                    self.arm_offsets[side] = (
+                        0.7 * old_off[0] + 0.3 * new_offset[0],
+                        0.7 * old_off[1] + 0.3 * new_offset[1],
+                    )
+                else:
+                    self.arm_offsets[side] = new_offset
             elif upper_valid and side in self.arm_offsets:
                 offset = self.arm_offsets[side]
                 image_wrist = (xy(elbow)[0] + offset[0], xy(elbow)[1] + offset[1])
@@ -315,14 +321,21 @@ class FeatureExtractor:
         if world and reliable(11, 0.55) and reliable(12, 0.55):
             v = tuple(getattr(world[12], axis) - getattr(world[11], axis) for axis in ("x", "y", "z"))
             if all(math.isfinite(x) for x in v) and 0.12 < math.dist(v, (0.0, 0.0, 0.0)) < 0.85:
-                raw_yaw = max(-1.1, min(1.1, math.atan2(v[2], abs(v[0]))))
-                # Apply upright deadband (|raw_yaw| < 0.14 rad ≈ 8°) so frontal standing never tilts randomly!
-                if abs(raw_yaw) < 0.14:
+                raw_yaw = max(-0.52, min(0.52, math.atan2(v[2], max(0.10, abs(v[0])))))
+                # Suppress monocular raised-arm Z distortion when 2D shoulders are wide-open facing camera
+                if self.reference_scale and shoulder_width > 0:
+                    foreshorten = 1.0 - min(1.0, shoulder_width / max(1.0, self.reference_scale))
+                    gate = 0.28 + 0.72 * smoothstep(foreshorten / 0.22)
+                    raw_yaw *= gate
+                if abs(raw_yaw) < 0.16:
                     raw_yaw = 0.0
                 yaw = self.yaw_filter(raw_yaw, timestamp)
-                if abs(yaw) < 0.03:
+                if abs(yaw) < 0.035:
                     yaw = 0.0
                 self.last_yaw = yaw
+        elif valid and self.last_yaw:
+            self.last_yaw *= 0.90
+            yaw = self.last_yaw if abs(self.last_yaw) >= 0.035 else 0.0
         if not valid and any(a.hand_valid for a in result):
             reason = "仅手部识别：水球/火焰可用"
             if self.last_body is None:

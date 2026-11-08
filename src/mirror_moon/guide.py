@@ -290,7 +290,7 @@ class PoseGuide(QWidget):
         wave = 0.5 - 0.5 * math.cos(sub_t * math.tau)
 
         titles = {
-            "circle": ("Ⅰ · 胸前握拳唤阵", "Ⅱ · 伸臂导引星流", "Ⅲ · 双手共鸣过载"),
+            "circle": ("Ⅰ · 胸前握拳唤阵", "Ⅱ · 伸臂轰出冰棱寒雾", "Ⅲ · 双掌共鸣暴风雪"),
             "blade": ("Ⅰ · 收手蓄势", "Ⅱ · 破空挥斩", "Ⅲ · 回锋十字"),
             "mirror": ("Ⅰ · 胸前合手凝镜", "Ⅱ · 展臂旋天控镜", "Ⅲ · 折镜万象与崩碎"),
         }
@@ -300,9 +300,9 @@ class PoseGuide(QWidget):
         )
         subtitles = {
             "circle": (
-                "任意一手握拳置于胸前片刻，展开星象罗盘法阵",
-                "另一手张开前伸增强能量、收回减弱；握拳暂停输出",
-                "将召唤手搭在施法手腕或前臂上（伸直或弯曲皆可），触发过载",
+                "任意一手握拳置于胸前片刻，展开冰魄奥术法阵",
+                "另一手张开前伸释放极寒冰雾与破空冰枪；握拳暂停输出",
+                "副手搭在施法腕/前臂上，或将副手同样张开抬起（双掌无遮挡共鸣），触发过载",
             ),
             "blade": (
                 "将施法手收至对侧肩前停留蓄势",
@@ -319,7 +319,7 @@ class PoseGuide(QWidget):
             water=(
                 "任意角度握拳再摊开，水球出现在掌前；无需身体入画",
                 "双掌夹住水球，拉开可变大。移动时有惯性",
-                "另一手搭腕或前臂发射；只有拍掌才结束水球",
+                "副手搭腕/握拳助推或单手握拳弹射发射；拍掌或双臂自然垂下收起水球",
             ),
             fire=(
                 "先张开，再握拳满2秒解锁该手",
@@ -328,7 +328,7 @@ class PoseGuide(QWidget):
             ),
         )
         tips = {
-            "circle": "✦ 只要施法手不放下，移动身体不会中断施法\n✦ 铂金雕纹为星盘本体，星云流光为释放魔力\n✦ 放下施法手即可收阵归隐",
+            "circle": "✦ 只要施法手不放下，移动身体不会中断冰魔法\n✦ 金青奥术法阵正对躯干，释放翻涌冰雾与破空冰棱\n✦ 放下施法手即可收阵归隐",
             "blade": "✦ 挥刀动作连贯即可\n✦ 切换法术时请先自然垂手半秒",
             "mirror": "✦ 双臂一上一下大角度旋转也不会中断\n✦ 自由缩放不关镜；合拢停住 0.3 秒平静收镜",
         }
@@ -403,11 +403,11 @@ class PoseGuide(QWidget):
         elif self.mode == "water":
             p.setBrush(QColor(25, 130, 200, 145))
             p.setPen(QPen(QColor("#80d4ec"), 2))
-            p.drawEllipse(QPointF(*r_wr), 22 + wave * 8, 23)
+            p.drawEllipse(QPointF(r_wr[0], r_wr[1] - 28), 22 + wave * 8, 23)
         elif self.mode == "fire":
             p.setBrush(QColor(255, 105, 20, 200))
             p.setPen(Qt.PenStyle.NoPen)
-            p.drawEllipse(QPointF(r_wr[0], r_wr[1] - 15), 12, 25 + wave * 10)
+            p.drawEllipse(QPointF(r_wr[0], r_wr[1] - 28), 12, 25 + wave * 10)
         elif self.mode == "mirror":
             mw = math.hypot(r_wr[0] - l_wr[0], r_wr[1] - l_wr[1])
             if mw > 24:

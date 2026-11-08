@@ -18,6 +18,9 @@ from mirror_moon.render import GLStage
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--compat", action="store_true")
+    parser.add_argument(
+        "--high", action="store_true", help="Exercise the high-quality shader and postprocessing"
+    )
     parser.add_argument("--output", type=Path, default=Path("local/graphics"))
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
@@ -42,6 +45,8 @@ def main():
         diagnostics=False,
     )
     window = Window(options)
+    if args.high:
+        window.quality.setCurrentIndex(2)
     window.show()
 
     def neutral_resize_phase():

@@ -102,7 +102,7 @@ class Window(QMainWindow):
         header.addWidget(spell_label)
         self.mode = QComboBox()
         for name, value in (
-            ("星环术", "circle"),
+            ("冰魔法", "circle"),
             ("月刃术 (已封存)", "blade"),
             ("镜界术", "mirror"),
             ("水球术", "water"),
@@ -117,10 +117,13 @@ class Window(QMainWindow):
         header.addWidget(self.mode)
         header.addWidget(elem_label)
         self.element = QComboBox()
-        self.element.addItem("月华", "moon")
-        self.element.addItem("雷霆", "lightning")
+        self.element.addItem("冰魔法", "moon")
+        self.element.addItem("雷霆 (已封存)", "lightning")
+        self.element.view().setRowHidden(1, True)
         self.element.setAccessibleName("法阵元素")
         header.addWidget(self.element)
+        elem_label.setVisible(False)
+        self.element.setVisible(False)
         layout.addWidget(header_frame)
 
         # ── Engraved Sanctum Control Bar ──
@@ -443,7 +446,8 @@ class Window(QMainWindow):
         self.guide.started = time.perf_counter()
         self.data.reset_effects()
         self.audio.stop()
-        self.element.setEnabled(self.mode.currentData() == "circle")
+        self.element.setEnabled(False)
+        self.element.setVisible(False)
         if self.pipeline:
             self.pipeline.set_controls(mode=self.mode.currentData())
 

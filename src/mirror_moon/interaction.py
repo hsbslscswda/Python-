@@ -6,7 +6,15 @@ from dataclasses import replace
 from .config import DEFAULTS
 from .domain import Event, Shape, SpellView
 from .fire import Fire
-from .geometry import Hold, arm_lowered, blade_combo, distance, fitted_velocity, recent_samples
+from .geometry import (
+    Hold,
+    arm_lowered,
+    blade_combo,
+    both_arms_dropped_out,
+    distance,
+    fitted_velocity,
+    recent_samples,
+)
 from .star_ring import Circle
 from .water import Water
 
@@ -185,6 +193,7 @@ class Mirror:
         self.prev_distance = self.max_distance = 0.0
         self.center = (0.0, 0.0)
         self.size = self.angle = 0.0
+        self.target_angle = 0.0
         self.fold_anchor = None
         self.history = []
         self.visibility = 0.0
@@ -215,7 +224,8 @@ class Mirror:
             else self.cfg.mirror_geometry_bridge
         )
         active_mirror = self.state in ("OPENING", "MANIPULATING", "FOLDING")
-        geometry_ok = all(
+        dropped_down = both_arms_dropped_out(f)
+        geometry_ok = not dropped_down and all(
             a.hand_valid
             or (
                 (a.upper_valid and self.hand_seen[i] > -1e8 and active_mirror)
@@ -224,9 +234,11 @@ class Mirror:
             for i, a in enumerate(f.arms)
         )
         good = prepared if self.state == "IDLE" else geometry_ok
-        dt = t - self.last_t
+        dt = max(0.0, t - self.last_t) if self.last_t else 0.0
         if dt > self.cfg.max_gap:
             self.history.clear()
+            self.hold.starts.pop("lowered_close", None)
+        lowered_close = self.hold.ready("lowered_close", dropped_down, t, self.cfg.lowered_close_hold)
         self.last_t = t
         if good:
             if visible or (
@@ -237,12 +249,19 @@ class Mirror:
             d = distance(left.wrist, right.wrist) / f.scale
             mid = ((left.wrist[0] + right.wrist[0]) / 2, (left.wrist[1] + right.wrist[1]) / 2)
             raw_angle = math.atan2(right.wrist[1] - left.wrist[1], right.wrist[0] - left.wrist[0])
-            # Unwrap the unoriented hand axis; an identity flip must not spin the mirror 180°.
+            # Unwrap the unoriented hand axis; an identity flip must not spin the mirror 180°,
+            # and apply velocity-adaptive damping so stationary wrists never jitter the mirror angle.
             if d > 0.25:
                 if self.previous_angle is None:
-                    self.angle = (raw_angle + math.pi / 2) % math.pi - math.pi / 2
+                    unwrapped = (raw_angle + math.pi / 2) % math.pi - math.pi / 2
+                    self.target_angle = self.angle = unwrapped
                 else:
-                    self.angle += (raw_angle - self.previous_angle + math.pi / 2) % math.pi - math.pi / 2
+                    delta_a = (raw_angle - self.previous_angle + math.pi / 2) % math.pi - math.pi / 2
+                    self.target_angle += delta_a
+                    err_a = abs(self.target_angle - self.angle)
+                    rate_a = 7.5 if (not visible or err_a < 0.028) else 26.0
+                    ka = 1.0 - math.exp(-max(0.01, dt) * rate_a) if dt > 0 else 1.0
+                    self.angle += (self.target_angle - self.angle) * ka
                 self.previous_angle = raw_angle
             if self.state == "IDLE":
                 if d > 0.65:
@@ -333,10 +352,17 @@ class Mirror:
                     w[0] < 42.0 or w[0] > f.width - 42.0 or w[1] < 42.0 or w[1] > f.height - 42.0
                     for w in (left.wrist, right.wrist)
                 )
-                rate = 9.0 if (near_border or not visible) else 28.0
+                target_size = max(0.14, d * 0.55) * f.scale
+                pos_err = distance(mid, self.center) / max(1.0, f.scale) if self.size else 1.0
+                size_err = abs(target_size - self.size) / max(1.0, f.scale) if self.size else 1.0
+                if near_border or not visible:
+                    rate = 8.0
+                elif pos_err < 0.018 and size_err < 0.015:
+                    rate = 9.5
+                else:
+                    rate = 24.0
                 k = 1.0 - math.exp(-max(0.0, dt) * rate)
                 self.center = tuple(a + (b - a) * k for a, b in zip(self.center if self.size else mid, mid))
-                target_size = max(0.14, d * 0.55) * f.scale
                 self.size += (target_size - self.size) * k if self.size else target_size
             self.prev_distance = d
         elif self.state in ("SEED", "OPENING", "MANIPULATING", "FOLDING"):
@@ -344,7 +370,10 @@ class Mirror:
             self.close_candidate = None
             self.closing_peaks.clear()
             self.hold.ready("slow_close", False, t, self.cfg.mirror_close_hold)
-            # Latched mirror: tracking loss is not a close gesture. Keep last geometry.
+            # Close automatically when BOTH hands are lowered downward out of frame (not wide-span casting).
+            if lowered_close:
+                self.transition("CLOSING", t)
+                self.require_release = True
         if (not good and any(a.hand_valid and a.shape != Shape.OPEN for a in f.arms)) or all(
             arm_lowered(a, f) for a in f.arms
         ):
@@ -364,10 +393,10 @@ class Mirror:
             "IDLE": "双掌在胸前稍错开停留，再向两侧拉开唤出魔镜",
             "SEED": "魔镜裂隙已现：向两侧拉开双手展开镜界",
             "OPENING": "太虚魔镜展开",
-            "MANIPULATING": "慢合并稍停收镜，向内快合（相距两拳即可）碎镜；倾斜双臂开启万花筒",
-            "FOLDING": "万象棱镜（万花筒）；慢合收镜，向内快合碎镜",
+            "MANIPULATING": "慢合或双臂垂下自动收镜，快合碎镜；一上一下/一左一右大开合出画仍保持",
+            "FOLDING": "太虚折镜（星芒花窗）；慢合或双臂垂下收镜，向内快合碎镜",
             "SHATTER": "镜界碎裂定格，放松双手后重新开始",
-            "CLOSING": "镜界收拢",
+            "CLOSING": "镜界收拢消散中",
         }
         return SpellView(
             "mirror",
@@ -378,7 +407,7 @@ class Mirror:
             mirror_angle=self.angle,
             folded=self.state == "FOLDING",
             hint=hints[self.state],
-            quality="按手部/手臂控制" if good else "镜面保持；手回到画面后继续控制",
+            quality="按手部/手臂控制" if good else "大开合/遮挡保持；双臂自然垂下则自动收镜",
         ), events
 
 

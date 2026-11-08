@@ -1,5 +1,7 @@
 """Two independent hands. No body requirement and no missing-sample-as-fist rule."""
 
+import math
+
 from .config import DEFAULTS
 from .domain import EffectObject, Shape, SpellView
 from .geometry import Hold
@@ -11,6 +13,7 @@ class Flame:
         self.hold = Hold()
         self.last_seen = -1e9
         self.center = (0.0, 0.0)
+        self.velocity = (0.0, 0.0)
         self.size = 0.0
         self.born = 0.0
         self.opacity = 0.0
@@ -39,8 +42,9 @@ class Fire:
             flame = self.hands[arm.side]
             fresh = arm.hand_valid and arm.shape_age <= self.cfg.gesture_max_age
             fraction = arm.openness if arm.openness is not None else (0.0 if arm.shape == Shape.FIST else 1.0)
-            fist = fresh and arm.shape == Shape.FIST and fraction < 0.20
-            opened = fresh and arm.shape != Shape.UNKNOWN and not fist
+            fist = fresh and arm.shape == Shape.FIST and fraction < 0.22
+            partial_fist = fresh and arm.shape == Shape.FIST and 0.22 <= fraction < 0.38
+            opened = fresh and arm.shape not in (Shape.UNKNOWN, Shape.FIST) and not fist
             if opened:
                 flame.saw_open = True
             if not flame.unlocked:
@@ -57,8 +61,13 @@ class Fire:
                         events.append(("fire_unlock", (), 1.0))
                 else:
                     flame.previous_fist = False
-                    uncertain = not fresh or arm.shape == Shape.UNKNOWN
-                    if not uncertain or t - flame.last_fist_seen > self.cfg.fire_unlock_dropout:
+                    if partial_fist:
+                        # A currently observed borderline fist pauses; it is not a tracking dropout.
+                        flame.last_fist_seen = t
+                    uncertain = not fresh or arm.shape == Shape.UNKNOWN or partial_fist
+                    if not uncertain or (
+                        not partial_fist and t - flame.last_fist_seen > self.cfg.fire_unlock_dropout
+                    ):
                         flame.unlock_seconds = 0.0
                     elif flame.unlock_seconds > 0:
                         charging += 1
@@ -75,22 +84,49 @@ class Fire:
                     flame.active, flame.born = True, t
                     events.append(("ignite", (arm.palm or arm.wrist,), 1.0))
             if fresh:
-                flame.last_seen = t
-                flame.center = arm.palm or arm.wrist
+                raw_palm = arm.palm or arm.wrist
                 if arm.shape != Shape.UNKNOWN:
-                    flame.size = max(12.0, arm.palm_scale * 0.8 or f.scale * 0.20) * max(
+                    target_size = max(12.0, arm.palm_scale * 0.8 or f.scale * 0.20) * max(
                         0.0, min(1.0, fraction)
                     )
+                    flame.size = (
+                        target_size
+                        if flame.size <= 0.5 or dt <= 0
+                        else flame.size + (target_size - flame.size) * (1.0 - math.exp(-dt * 18.0))
+                    )
+                # Levitate the flame clearly ABOVE the palm center so it never sticks to the hand!
+                lev_y = max(18.0, flame.size * self.cfg.flame_levitation)
+                target_center = (raw_palm[0], raw_palm[1] - lev_y)
+                if flame.last_seen < -1e8 or dt <= 0 or dt > 0.25:
+                    flame.center = target_center
+                    flame.velocity = (0.0, 0.0)
+                else:
+                    k = 1.0 - math.exp(-dt * 22.0)
+                    vx = (target_center[0] - flame.center[0]) / max(0.008, dt)
+                    vy = (target_center[1] - flame.center[1]) / max(0.008, dt)
+                    flame.velocity = (
+                        0.65 * flame.velocity[0] + 0.35 * vx,
+                        0.65 * flame.velocity[1] + 0.35 * vy,
+                    )
+                    flame.center = (
+                        flame.center[0] + (target_center[0] - flame.center[0]) * k,
+                        flame.center[1] + (target_center[1] - flame.center[1]) * k,
+                    )
+                flame.last_seen = t
+            else:
+                flame.velocity = (flame.velocity[0] * 0.85, flame.velocity[1] * 0.85)
             age = t - flame.last_seen
             fade = max(0.0, 1.0 - max(0.0, age - self.cfg.fire_loss_hold) / self.cfg.fire_loss_fade)
             flame.opacity = fade if flame.active else 0.0
             if age > self.cfg.fire_loss_hold + self.cfg.fire_loss_fade:
                 flame.active = False
             if flame.active and flame.size > 0.5:
-                objects.append(EffectObject(4, flame.center, flame.size, t - flame.born, fade))
+                objects.append(
+                    EffectObject(4, flame.center, flame.size, t - flame.born, fade, velocity=flame.velocity)
+                )
         ready = any(h.unlocked for h in self.hands.values())
         hint = (
-            "火焰跟随掌心；收拳逐渐熄灭，翻掌朝下熄灭"
+            "圣焰悬浮于掌心之上；收拳逐渐收缩熄灭，翻掌朝下熄灭"
             if objects
             else "保持握拳满2秒，解锁该手"
             if charging

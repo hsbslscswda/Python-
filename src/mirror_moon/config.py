@@ -42,13 +42,16 @@ class Thresholds:
     fire_loss_hold: float = 1.0
     fire_loss_fade: float = 0.65
     fire_palm_down: float = 0.45
+    flame_levitation: float = 1.15
     gesture_max_age: float = 0.18
     water_palm_offset: float = 0.05
-    water_grip_hold: float = 0.18
+    water_levitation: float = 0.11
+    water_grip_hold: float = 0.15
     water_launch_speed: float = 4.5
     water_spring: float = 65.0
     water_damping: float = 13.0
     water_gravity: float = 1.8
+    lowered_close_hold: float = 0.30
     clap_distance: float = 0.24
     clap_speed: float = 0.9
 
