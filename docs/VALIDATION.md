@@ -1,5 +1,7 @@
 # v0.4.3 本机验证（2026-11-08）
 
+固定运行/源码提交：`d2f715fc3813e7ad92a65cf592bca48939c15af0`；最终公开发布ID438178805，三附件与本地SHA256一致，Windows公开下载HEAD200。包内记录冻结于发布前，后续文档提交不移动运行标签。
+
 输入基线v0.4.2/f458d6c；候选包及SHA见UPGRADE_IMPORT_v0.4.3.json。本轮原始证据为`local/incoming-v043`，不是沿用旧轮通过记录。原包145项通过；集成后157 pytest、Ruff、compileall与diff检查通过。
 
 ## 软件与原生已验证
