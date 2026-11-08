@@ -44,4 +44,4 @@ v0.4.4已公开预发行：[发布页](https://github.com/hsbslscswda/Python-/re
 
 ## v0.4.4 验证后同步main的收尾
 
-用户于2026-11-08明确要求：完成软件验证应继续合入main。已核对原main独立的项目简介修改并保留；本次通过正常合并同步v0.4.4源码和当前交接。运行文件须与固定54f709a3c0509b99a0f2fe8768cfaf51a0c4ab50逐项一致，复用168测试、24镜面探针及EXE/ZIP证据，不重新打包或移动v0.4.4标签。合并过程仅整合README和完善协作/交接说明，真人与Gemini复审待办不变。后续流程见WORKFLOW“验证后的main同步”。
+用户于2026-11-08明确要求：完成软件验证应继续合入main。已核对原main独立的项目简介修改并保留；本次通过[PR #1](https://github.com/hsbslscswda/Python-/pull/1)正常合并同步v0.4.4源码和当前交接，main作为默认源码入口；codex/mirror-moon保留用于后续开发。运行文件须与固定54f709a3c0509b99a0f2fe8768cfaf51a0c4ab50逐项一致，复用168测试、24镜面探针及EXE/ZIP证据，不重新打包或移动v0.4.4标签。合并过程仅整合README和完善协作/交接说明，真人与Gemini复审待办不变。后续流程见WORKFLOW“验证后的main同步”。
