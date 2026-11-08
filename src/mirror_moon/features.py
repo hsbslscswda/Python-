@@ -55,7 +55,7 @@ def classify(points, previous=Shape.UNKNOWN, world=None):
 class FeatureExtractor:
     def __init__(self):
         self.scale_filter = OneEuro(1.2, 0.003)
-        self.yaw_filter = OneEuro(0.45, 0.001)
+        self.yaw_filter = OneEuro(0.95, 0.005)
         self.previous = {}
         self.last_seen = {}
         self.palm_sizes = {}
@@ -118,10 +118,11 @@ class FeatureExtractor:
 
         shoulder_width = distance(xy(11), xy(12)) if finite(11) and finite(12) else 0.0
         body = shoulder_width > width * 0.03 and max(confidence(11), confidence(12)) >= 0.45
+        torso = None
+        mid = (width / 2, height / 2)
         if body:
             mid = tuple((a + b) / 2 for a, b in zip(xy(11), xy(12)))
             direction = (0.0, 1.0)
-            torso = None
             if reliable(23, 0.35) and reliable(24, 0.35):
                 hips = tuple((a + b) / 2 for a, b in zip(xy(23), xy(24)))
                 torso = distance(hips, mid)
@@ -133,7 +134,20 @@ class FeatureExtractor:
             effective = max(shoulder_width, reference * 0.72)
             scale = max(1.0, self.scale_filter(effective, timestamp))
             chest = (mid[0] + direction[0] * 0.25 * scale, mid[1] + direction[1] * 0.25 * scale)
-            if shoulder_width >= reference * 0.75:
+            # Only update frontal shoulder reference when torso is facing camera (prevents sideways stance from overwriting reference_scale!)
+            frontal_posture = reliable(0, 0.40)
+            if reliable(0, 0.40):
+                frontal_posture = abs(mid[0] - xy(0)[0]) / max(24.0, shoulder_width) < 0.16
+            if world:
+                shoulder_delta = tuple(
+                    getattr(world[12], axis) - getattr(world[11], axis) for axis in ("x", "y", "z")
+                )
+                if all(math.isfinite(v) for v in shoulder_delta):
+                    frontal_posture = (
+                        frontal_posture
+                        and abs(math.atan2(shoulder_delta[2], max(0.05, abs(shoulder_delta[0])))) < 0.25
+                    )
+            if shoulder_width >= reference * 0.82 and frontal_posture:
                 self.reference_scale = (
                     shoulder_width
                     if self.reference_scale is None
@@ -318,24 +332,47 @@ class FeatureExtractor:
                 )
             )
         yaw = None
-        if world and reliable(11, 0.55) and reliable(12, 0.55):
+        if world and reliable(11, 0.35) and reliable(12, 0.35):
             v = tuple(getattr(world[12], axis) - getattr(world[11], axis) for axis in ("x", "y", "z"))
-            if all(math.isfinite(x) for x in v) and 0.12 < math.dist(v, (0.0, 0.0, 0.0)) < 0.85:
-                raw_yaw = max(-0.52, min(0.52, math.atan2(v[2], max(0.10, abs(v[0])))))
-                # Suppress monocular raised-arm Z distortion when 2D shoulders are wide-open facing camera
-                if self.reference_scale and shoulder_width > 0:
-                    foreshorten = 1.0 - min(1.0, shoulder_width / max(1.0, self.reference_scale))
-                    gate = 0.28 + 0.72 * smoothstep(foreshorten / 0.22)
-                    raw_yaw *= gate
-                if abs(raw_yaw) < 0.16:
-                    raw_yaw = 0.0
+            if all(math.isfinite(x) for x in v) and 0.06 < math.dist(v, (0.0, 0.0, 0.0)) < 0.92:
+                yaw_3d = math.atan2(v[2], max(0.05, abs(v[0])))
+                nose_offset = 0.0
+                vert_shoulder_ref = self.reference_scale or shoulder_width
+                if reliable(0, 0.38) and finite(11) and finite(12):
+                    mid_sh_x = 0.5 * (xy(11)[0] + xy(12)[0])
+                    mid_sh_y = 0.5 * (xy(11)[1] + xy(12)[1])
+                    nose_offset = (mid_sh_x - xy(0)[0]) / max(24.0, shoulder_width)
+                    # Vertical neck/head span is invariant when rotating around spine Y-axis (even if user started sideways!)
+                    neck_vert = abs(mid_sh_y - xy(0)[1]) * 1.92
+                    vert_shoulder_ref = max(vert_shoulder_ref, neck_vert)
+                if torso:
+                    vert_shoulder_ref = max(vert_shoulder_ref, torso * 0.74)
+                foreshorten_yaw = 0.0
+                foreshorten = 0.0
+                if vert_shoulder_ref > 0 and shoulder_width > 0:
+                    ratio = max(0.25, min(1.0, shoulder_width / max(1.0, vert_shoulder_ref)))
+                    foreshorten = 1.0 - ratio
+                    if foreshorten > 0.05:
+                        foreshorten_yaw = math.acos(ratio) * 0.86
+                sign_hint = yaw_3d if abs(yaw_3d) >= abs(nose_offset * 0.50) else nose_offset * 0.70
+                if abs(sign_hint) > 1e-4 and (
+                    foreshorten > 0.06 or abs(yaw_3d) > 0.18 or abs(nose_offset) > 0.13
+                ):
+                    signed_fs = math.copysign(foreshorten_yaw, sign_hint)
+                    raw_yaw = yaw_3d * 0.74 + signed_fs * 0.52 + nose_offset * 0.42
+                    raw_yaw = max(-1.08, min(1.08, raw_yaw))
+                else:
+                    gate = 0.35 + 0.65 * smoothstep(foreshorten / 0.18)
+                    raw_yaw = yaw_3d * gate
+                    if abs(raw_yaw) < 0.10:
+                        raw_yaw = 0.0
                 yaw = self.yaw_filter(raw_yaw, timestamp)
-                if abs(yaw) < 0.035:
+                if abs(yaw) < 0.03:
                     yaw = 0.0
                 self.last_yaw = yaw
         elif valid and self.last_yaw:
-            self.last_yaw *= 0.90
-            yaw = self.last_yaw if abs(self.last_yaw) >= 0.035 else 0.0
+            self.last_yaw *= 0.92
+            yaw = self.last_yaw if abs(self.last_yaw) >= 0.03 else 0.0
         if not valid and any(a.hand_valid for a in result):
             reason = "仅手部识别：水球/火焰可用"
             if self.last_body is None:

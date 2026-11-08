@@ -47,12 +47,35 @@ def main():
     window.show()
     states = {"water": set(), "fire": set()}
     object_kinds = set()
+    unrequested_orb_frames = 0
+    last_water_launch = last_water_open = -1e9
+    original_events = window.data.events
+
+    def tracked_events(events):
+        nonlocal last_water_launch, last_water_open
+        for event in events:
+            if event.kind == "water_launch":
+                last_water_launch = event.timestamp
+            elif event.kind == "water_open":
+                last_water_open = event.timestamp
+        original_events(events)
+
+    window.data.events = tracked_events
 
     def observe():
+        nonlocal unrequested_orb_frames
         if window.data.scene:
             v = window.data.scene.spell
             states[v.mode].add(v.state)
             object_kinds.update(o.kind for o in v.objects)
+            # Compare the displayed snapshot to event timestamps, not the worker's newer counters.
+            if (
+                v.mode == "water"
+                and last_water_launch > last_water_open
+                and window.data.scene.features.timestamp >= last_water_launch
+                and any(o.kind == 1 for o in v.objects)
+            ):
+                unrequested_orb_frames += 1
             if any(o.kind == 2 for o in v.objects) and not getattr(window, "shot_captured", False):
                 window.stage_image(args.output / "water-launch.png")
                 window.shot_captured = True
@@ -83,6 +106,7 @@ def main():
             states={k: sorted(v) for k, v in states.items()},
             events=dict(window.pipeline.event_counts),
             object_kinds=sorted(object_kinds),
+            unrequested_orb_frames=unrequested_orb_frames,
             workers_closed_cleanly=window.pipeline.closed_cleanly,
             renderer=window.data.renderer_info,
         )
@@ -102,6 +126,7 @@ def main():
     ):
         assert report["events"].get(event, 0) > 0, (event, report)
     assert {1, 2, 3, 4}.issubset(object_kinds), report
+    assert report["unrequested_orb_frames"] == 0, report
     print(json.dumps(report))
     return result
 

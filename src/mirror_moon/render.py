@@ -122,7 +122,8 @@ class RenderState:
         cr = self.display_radius if self.display_radius is not None else spell.radius
         self.display_radius = cr + (spell.radius - cr) * k
         ca = self.display_angle if self.display_angle is not None else spell.mirror_angle
-        self.display_angle = ca + (spell.mirror_angle - ca) * k
+        da = math.atan2(math.sin(spell.mirror_angle - ca), math.cos(spell.mirror_angle - ca))
+        self.display_angle = ca + da * k
         return replace(
             spell,
             center=self.display_center,
@@ -320,7 +321,7 @@ class GLStage(QOpenGLWidget):
             arm_dx = (px_palm[0] - f.chest[0]) / max(40.0, f.scale)
             arm_dy = (px_palm[1] - f.chest[1]) / max(40.0, f.scale)
             yaw_val = f.body_yaw or 0.0
-            nx_raw = math.sin(yaw_val) * 0.35 + max(-0.85, min(0.85, arm_dx * 0.45))
+            nx_raw = math.sin(yaw_val) * 0.68 + max(-0.88, min(0.88, arm_dx * 0.48))
             ny_raw = max(-0.55, min(0.55, arm_dy * 0.32 - 0.05))
             nx = d.aim_filters[0](nx_raw, f.timestamp)
             ny = d.aim_filters[1](ny_raw, f.timestamp)
@@ -545,11 +546,11 @@ class PainterStage(QWidget):
                         wrist[0] + direction[0] / norm * d.scene.features.scale * 3,
                         wrist[1] + direction[1] / norm * d.scene.features.scale * 3,
                     )
-                    beam = QColor("#8553da" if d.element == "lightning" else "#338fc4")
+                    beam = QColor("#8553da" if d.element == "lightning" else "#7ab8dc")
                     beam.setAlphaF(0.6)
                     p.setPen(QPen(beam, 8 + view.intensity * 14))
                     p.drawLine(QPointF(*wrist), QPointF(*end))
-                    p.setPen(QPen(QColor("#71bfe5"), 3 + view.intensity * 3))
+                    p.setPen(QPen(QColor("#e8f6ff"), 3 + view.intensity * 3))
                     p.drawLine(QPointF(*wrist), QPointF(*end))
             elif view.mode == "mirror" and view.visibility:
                 p.save()
@@ -656,6 +657,22 @@ def draw_object(p, obj, now):
     r = max(2.0, obj.radius)
     p.setPen(Qt.PenStyle.NoPen)
     if obj.kind in (1, 2):
+        if obj.kind == 2:
+            vx, vy = obj.velocity
+            spd = math.hypot(vx, vy)
+            dx, dy = (vx / spd, vy / spd) if spd > 2.0 else (1.0, 0.0)
+            angle_deg = math.degrees(math.atan2(dy, dx))
+            boom_fade = max(0.25, 1.0 - min(1.0, obj.age / 0.65))
+            p.save()
+            p.translate(x - dx * r * 0.35, y - dy * r * 0.35)
+            p.rotate(angle_deg)
+            p.setPen(QPen(QColor(230, 248, 255, int(195 * boom_fade)), max(2.0, r * 0.14)))
+            p.setBrush(QColor(180, 232, 255, int(85 * boom_fade)))
+            p.drawEllipse(QPointF(0, 0), r * 0.45, r * (1.45 + 0.35 * min(1.0, obj.age * 3.0)))
+            p.setPen(QPen(QColor(145, 218, 250, int(145 * boom_fade)), max(1.5, r * 0.08)))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            p.drawEllipse(QPointF(-r * 0.55, 0), r * 0.32, r * 1.85)
+            p.restore()
         grad = QRadialGradient(QPointF(x - r * 0.25, y - r * 0.3), r * 1.2)
         grad.setColorAt(0, QColor(155, 217, 238, 200))
         grad.setColorAt(0.25, QColor(20, 115, 165, 120))

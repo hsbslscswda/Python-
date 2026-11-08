@@ -191,7 +191,7 @@ vec2 sdFacetedIceShard(vec2 p, float s, float angle, float aspect) {
     return vec2(body, clamp(ridge + lit_facet * 0.75, 0.0, 1.0));
 }
 
-// Fast Polar-Folded Gothic Astrolabe Plane (Warm Champagne-Platinum & Deep Sapphire, O(1) per-pixel cost!)
+// Fast Polar-Folded Gothic Astrolabe Plane (Warm Champagne-Platinum & Deep Glacier Sapphire, O(1) per-pixel cost!)
 vec4 evaluateAstrolabePlane(vec2 q, float px_w, float t, float power, float over) {
     float r = length(q);
     if (r > 1.25) return vec4(0.0);
@@ -245,7 +245,7 @@ vec4 evaluateAstrolabePlane(vec2 q, float px_w, float t, float power, float over
         float sp12 = abs(sin(a_ccw * 6.0));
         metal += (1.0 - smoothstep(0.0, px_w * 2.0 / max(r, 0.18), sp12)) * 0.60;
     }
-    // O(1) Polar-folded 8-node ice crystal medallions at r = 0.68 (replaces 8-loop per pixel!)
+    // O(1) Polar-folded 8-node ice crystal medallions at r = 0.68
     if (r > 0.59 && r < 0.77) {
         float sec8 = mod(a_cw + PI / 8.0, PI / 4.0) - PI / 8.0;
         vec2 dq = vec2(cos(sec8), sin(sec8)) * r - vec2(0.68, 0.0);
@@ -260,9 +260,9 @@ vec4 evaluateAstrolabePlane(vec2 q, float px_w, float t, float power, float over
         metal += stroke(sdRegularPolygon(rot(t * 0.25) * q, 1.11, 12), px_w * 1.15) * over * 0.85;
     }
 
-    vec3 deep_sapphire = vec3(0.05, 0.12, 0.28);
+    vec3 deep_sapphire = vec3(0.05, 0.13, 0.28);
     vec3 champagne_gold = vec3(0.94, 0.83, 0.63);
-    vec3 platinum_spec = vec3(1.00, 0.97, 0.90);
+    vec3 platinum_spec = vec3(0.98, 0.99, 1.00);
 
     float aniso = 0.82 + 0.18 * cos(a_cw * 8.0 - t * 2.4);
     vec3 col = deep_sapphire * (sapphire_plate + clamp(metal, 0.0, 1.0) * 0.45);
@@ -328,7 +328,7 @@ void main() {
     float shoulder_px = max(45.0, shoulder * s_scale);
 
     // ═══════════════════════════════════════════════════════════════════════════
-    // MODE 0: ICE MAGIC (冰魔法 — 1: 中心极寒破甲冰枪主炮与裂空冰雷核心 + 2: 环绕三道3D螺旋寒霜龙卷与震波环 + 3: 自阴影体积冰雾 + 大小/3D方向/形状不一的雪花与切面冰渣 + 4: 扇形外围与法阵边缘稀少华美连带反应)
+    // MODE 0: ICE MAGIC (冰魔法 — 100% 保留 v0.4.3 完整结构布局 + 3D 侧身正对跟随 + 真实通透冰川深浅色阶)
     // ═══════════════════════════════════════════════════════════════════════════
     if (mode == 0 && visibility > 0.01 && radius > 1.0) {
         vec2 base_center_px = map_point(center);
@@ -337,10 +337,11 @@ void main() {
         float R = min(radius * s_scale, viewport.y * 0.44);
 
         float mir_sign = mirrored == 1 ? -1.0 : 1.0;
-        vec2 arm_reach = (palm_px - chest_px) / max(60.0, shoulder_px * 1.45);
-        // Bounded frontal torso tracking: faces caster's front direction squarely without flipping to back/side!
-        float yaw_angle = clamp(body_yaw * mir_sign * 0.65 + cast_direction.x * mir_sign * 0.25 * migration, -0.36, 0.36);
-        float pitch_angle = clamp(cast_direction.y * 0.22 * migration, -0.26, 0.26);
+        vec2 arm_reach = (palm_px - chest_px) / max(60.0, shoulder_px * 1.35);
+        // Full 3D torso-frontal alignment: tilts in 3D perspective up to +-60 deg so the magic circle stays perpendicular to the caster's chest front even when turning sideways!
+        // Torso yaw owns the disk normal; casting-hand reach owns the attack direction below.
+        float yaw_angle = clamp(body_yaw * mir_sign, -1.08, 1.08);
+        float pitch_angle = clamp(cast_direction.y * mix(0.18, 0.28, migration), -0.30, 0.30);
 
         vec3 n3 = normalize(vec3(
             sin(yaw_angle) * cos(pitch_angle),
@@ -348,32 +349,32 @@ void main() {
             -cos(yaw_angle) * cos(pitch_angle)
         ));
 
-        vec2 plane_offset_px = n3.xy * shoulder_px * mix(0.65, 0.25, migration);
+        vec2 plane_offset_px = n3.xy * shoulder_px * mix(0.70, 0.26, migration);
         vec2 array_center_px = base_center_px + plane_offset_px;
         vec2 p = px - array_center_px;
 
         float tilt_len = length(n3.xy);
         vec2 tilt_dir = tilt_len > 1e-3 ? n3.xy / tilt_len : vec2(1.0, 0.0);
         vec2 perp_dir = vec2(-tilt_dir.y, tilt_dir.x);
-        float cos_tilt = max(0.78, abs(n3.z));
+        float cos_tilt = max(0.44, abs(n3.z));
         float sin_tilt = sqrt(max(0.0, 1.0 - cos_tilt * cos_tilt));
 
         float u_scr = dot(p, tilt_dir) / R;
         float v_scr = dot(p, perp_dir) / R;
-        float persp_denom = max(0.65, cos_tilt - u_scr * sin_tilt * 0.22);
+        float persp_denom = max(0.40, cos_tilt - u_scr * sin_tilt * 0.26);
         float u_plane = u_scr / persp_denom;
-        float v_plane = v_scr * (1.0 + (u_plane * sin_tilt) * 0.14);
+        float v_plane = v_scr * (1.0 + (u_plane * sin_tilt) * 0.15);
         vec2 q_front = tilt_dir * u_plane + perp_dir * v_plane;
 
-        vec2 p_back = p + n3.xy * (R * 0.065);
+        vec2 p_back = p + n3.xy * (R * 0.105);
         float u_scr_b = dot(p_back, tilt_dir) / R;
         float v_scr_b = dot(p_back, perp_dir) / R;
-        float persp_b = max(0.65, cos_tilt - u_scr_b * sin_tilt * 0.22);
-        vec2 q_back = (tilt_dir * (u_scr_b / persp_b) + perp_dir * (v_scr_b * (1.0 + (u_scr_b / persp_b) * sin_tilt * 0.14))) * 1.04;
+        float persp_b = max(0.40, cos_tilt - u_scr_b * sin_tilt * 0.26);
+        vec2 q_back = (tilt_dir * (u_scr_b / persp_b) + perp_dir * (v_scr_b * (1.0 + (u_scr_b / persp_b) * sin_tilt * 0.15))) * 1.04;
 
         float power = clamp(intensity, 0.0, 1.5);
         float over = clamp(intensity - 1.0, 0.0, 0.5) * 2.0;
-        float px_w = max(0.0034, 1.50 / max(90.0, R * cos_tilt));
+        float px_w = max(0.0034, 1.50 / max(78.0, R * cos_tilt));
 
         vec4 front_disk = evaluateAstrolabePlane(q_front, px_w, time, power, over);
         vec4 back_disk = quality >= 1 ? evaluateAstrolabePlane(q_back, px_w * 1.15, -time * 0.8, power, over) : vec4(0.0);
@@ -381,14 +382,14 @@ void main() {
         vec3 array_rgb = back_disk.rgb * (0.42 * (1.0 - front_disk.a * 0.75)) + front_disk.rgb;
         float array_alpha = clamp(front_disk.a + back_disk.a * 0.38, 0.0, 1.0) * visibility;
 
-        // Sympathetic Magic Circle Rim Frost Resonance (法阵旁边的寒霜连带反应!)
+        // Sympathetic Magic Circle Rim Frost Resonance (法阵旁边的寒霜冰晶连带反应!)
         float r_arr = length(q_front);
         if (r_arr > 0.82 && r_arr < 1.38 && power > 0.01) {
             float ang_arr = atan(q_front.y, q_front.x);
             float rim_n = fbm(q_front * 3.5 + vec2(cos(time * 0.6), sin(time * 0.6)));
             float rim_mist = exp(-pow((r_arr - 1.04) / 0.15, 2.0)) * (0.4 + 0.6 * rim_n) * min(1.0, power);
             float rim_wave = stroke(r_arr - (1.12 + 0.05 * sin(ang_arr * 6.0 - time * 2.5)), px_w * 1.2) * min(1.0, power) * 0.65;
-            array_rgb += magicColor(vec3(0.35, 0.82, 1.00)) * (rim_mist * 0.65 + rim_wave);
+            array_rgb += magicColor(vec3(0.55, 0.84, 0.98)) * (rim_mist * 0.62 + rim_wave * 0.88);
             array_alpha = clamp(array_alpha + (rim_mist * 0.42 + rim_wave * 0.55) * visibility, 0.0, 1.0);
         }
 
@@ -417,11 +418,12 @@ void main() {
                     fbm(wind_uv * 2.2 + vec2(5.2, -time * 0.8)) - 0.5
                 );
 
-                // ── 1. LETHAL CENTRAL CRYO-SPEAR CANNON & SINGULARITY CORE (中心极具杀伤力的极寒破甲巨枪主炮与裂空冰雷核心!) ──
+                // ── 1. LETHAL CENTRAL CRYO-SPEAR CANNON & SINGULARITY CORE (中心极寒破甲巨枪主炮与裂空冰雷核心!) ──
                 float sing_r = length(q_front);
                 float sing_ang = atan(q_front.y, q_front.x);
                 float spike_burst = pow(abs(cos(sing_ang * 8.0 + time * 2.0)) * 0.6 + abs(sin(sing_ang * 12.0 - time * 3.2)) * 0.4, 2.2);
-                float core_spikes = (1.0 - smoothstep(0.04, 0.28 + spike_burst * 0.28, sing_r)) * (0.7 + 0.3 * ridgedFbm(q_front * 8.0 - time * 4.0));
+                float core_facets = ridgedFbm(q_front * 8.0 - time * 4.0);
+                float core_spikes = (1.0 - smoothstep(0.04, 0.28 + spike_burst * 0.28, sing_r)) * (0.58 + 0.42 * core_facets);
                 float core_singularity = exp(-pow(sing_r / 0.19, 2.0) * 2.8);
 
                 float spear_len = 1.65 + 0.55 * power + 0.35 * over;
@@ -471,11 +473,11 @@ void main() {
                 float f_puff_lit = fbm((fog_p + vec2(0.08, -sign(v_ax) * 0.08)) * 2.8);
                 float raw_mist = smoothstep(0.24, 0.82, f_puff1 * 0.60 + f_puff2 * 0.40);
                 float flank_profile = exp(-pow(abs(v_ax) / (outer_half_w * 0.96), 2.0) * 1.55) * start_gate * end_gate;
-                float mist_density = raw_mist * flank_profile * 0.72;
-                float mist_light = clamp((f_puff_lit - f_puff1) * 2.8 + 0.52 + lethal_core_energy * 0.45, 0.0, 1.0);
+                float mist_density = raw_mist * flank_profile * 0.74;
+                float mist_light = clamp((f_puff_lit - f_puff1) * 3.0 + 0.48 + lethal_core_energy * 0.42, 0.0, 1.0);
 
-                // Varied 3D Snowflakes (大小不一、3D方向不一、形状不一的雪花, including sparse sympathetic snowflakes outside main fan!)
-                float snow_body = 0.0, snow_spec = 0.0;
+                // Varied 3D Snowflakes with per-layer depth gradation (远近深浅分明的四层 3D 雪花)
+                float snow_deep = 0.0, snow_mid = 0.0, snow_spec = 0.0;
                 float shard_body = 0.0, shard_spec = 0.0;
                 float scales[4] = float[4](1.65, 2.85, 4.65, 7.40);
                 float depth_fade[4] = float[4](1.00, 0.84, 0.66, 0.48);
@@ -490,7 +492,6 @@ void main() {
                     vec2 cuv = fract(adv) - 0.5;
                     vec2 rnd = hash22(cid + vec2(fl * 29.3, fl * 47.1));
                     float kind_h = hash21(cid + vec2(91.7, fl * 13.3));
-                    // Inside main fan: dense blizzard; outside main fan (up to 1.68 * outer_half_w): sparse sympathetic snowflakes!
                     bool in_main_fan = abs(v_ax) < outer_half_w * (0.65 + 0.55 * rnd.y);
                     bool in_sympathetic_outer = abs(v_ax) < outer_half_w * 1.68 && rnd.x > 0.78;
                     if ((rnd.x > 0.30 && in_main_fan) || in_sympathetic_outer) {
@@ -504,11 +505,13 @@ void main() {
                             float sz = mix(0.15, 0.32, pow(rnd.y, 1.35));
                             vec2 sf = sdSnowflake3D(rot(spin) * loc, sz, kind_h, vec2(tilt_cos, tilt_shear)) * guard;
                             float dw = depth_fade[layer] * start_gate * end_gate * (in_main_fan ? 1.0 : 0.78);
-                            snow_body = max(snow_body, sf.x * dw);
+                            if (layer >= 2) snow_deep = max(snow_deep, sf.x * dw);
+                            else snow_mid = max(snow_mid, sf.x * dw);
                             snow_spec = max(snow_spec, sf.y * dw);
                         }
                     }
                 }
+                float snow_body = max(snow_deep, snow_mid);
 
                 // 3 Layers of Flying 3D Faceted Ice Shards / Splinters (切面冰渣飞舞)
                 float shard_scales[3] = float[3](2.6, 4.6, 7.8);
@@ -542,32 +545,43 @@ void main() {
 
                 float gain_m = clamp(0.60 + 0.52 * power + 0.28 * over, 0.0, 1.50) * visibility * clamp(effect_gain, 0.45, 1.30);
 
-                // Composite Layer A: Deep Self-Shadowed Volumetric Cryo-Fog
-                vec3 mist_dark = magicColor(vec3(0.06, 0.18, 0.38));
-                vec3 mist_mid = magicColor(vec3(0.28, 0.62, 0.88));
-                vec3 mist_bright = magicColor(vec3(0.76, 0.92, 1.00));
-                vec3 mist_col = mix(mist_dark, mist_mid, smoothstep(0.0, 0.6, mist_light));
-                mist_col = mix(mist_col, mist_bright, smoothstep(0.55, 1.0, mist_light));
-                color = mix(color, mist_col, clamp(mist_density * gain_m, 0.0, 0.68));
+                // User-specified four-layer glacier palette, RGB/255 (not the alternate supplied README palette).
+                vec3 ice_crevice = vec3(10.0, 36.0, 77.0) / 255.0;   // #0A244D
+                vec3 ice_far = vec3(36.0, 117.0, 194.0) / 255.0;     // #2475C2
+                vec3 ice_middle = vec3(97.0, 189.0, 242.0) / 255.0;  // #61BDF2
+                vec3 ice_surface = vec3(245.0, 252.0, 255.0) / 255.0;// #F5FCFF
+                // Composite Layer A: Deep Self-Shadowed Volumetric Glacial Ice Fog (深邃冰隙暗部 -> 透光冰川蓝 -> 表层白霜)
+                vec3 mist_dark = magicColor(ice_crevice);
+                vec3 mist_mid = magicColor(ice_middle);
+                vec3 mist_bright = magicColor(ice_surface);
+                vec3 mist_col = mix(mist_dark, mist_mid, smoothstep(0.0, 0.56, mist_light));
+                mist_col = mix(mist_col, mist_bright, smoothstep(0.50, 0.98, mist_light));
+                color = mix(color, mist_col, clamp(mist_density * gain_m, 0.0, 0.70));
 
-                // Composite Layer B: Surrounding Helical Vortex Ribbons, Shockwave Rings & Shrapnel Snowflakes
+                // Composite Layer B: Multi-Depth Glacial Ice Crystals, Helical Vortex Ribbons & Shockwave Rings
                 float crystal_shadow = clamp(snow_body + shard_body, 0.0, 1.0);
-                color = mix(color, vec3(0.05, 0.22, 0.46), crystal_shadow * 0.45);
-                vec3 surround_rgb = vec3(0.12, 0.64, 0.96) * (helical_vortex * 0.85 + shockwave_rings * 0.75 + snow_body * 0.65 + shard_body * 0.75)
-                                  + vec3(0.84, 0.96, 1.00) * (helical_vortex * 0.55 + shockwave_rings * 0.65 + snow_spec * 0.95 + shard_spec * 1.10);
+                color = mix(color, magicColor(ice_crevice), crystal_shadow * 0.48);
+                vec3 deep_glacier_blue = ice_far;
+                vec3 clear_ice_blue = ice_middle;
+                vec3 rime_white_spec = ice_surface;
+                vec3 surround_rgb = deep_glacier_blue * (snow_deep * 0.85 + shard_body * 0.45 + helical_vortex * 0.35)
+                                  + clear_ice_blue * (helical_vortex * 0.65 + shockwave_rings * 0.72 + snow_mid * 0.75 + shard_body * 0.55)
+                                  + rime_white_spec * (helical_vortex * 0.58 + shockwave_rings * 0.70 + snow_spec * 1.05 + shard_spec * 1.15);
                 surround_rgb = magicColor(surround_rgb);
                 float surround_peak = max(surround_rgb.r, max(surround_rgb.g, surround_rgb.b));
                 color = mix(color, surround_rgb / (1.0 + surround_peak * 0.40),
-                            clamp(surround_peak * gain_m * 0.65, 0.0, 0.82));
+                            clamp(surround_peak * gain_m * 0.66, 0.0, 0.84));
 
-                // Composite Layer C (DOMINANT LETHAL CENTERPIECE): Giant Faceted Ice-Lance Cannon, Singularity Spikes & Cryo-Lightning!
-                color = mix(color, vec3(0.04, 0.20, 0.48), clamp(spear_mask * 0.55, 0.0, 0.55));
-                vec3 core_rgb = vec3(0.22, 0.82, 1.00) * (lethal_core_energy * 0.75)
-                              + vec3(0.98, 1.00, 1.00) * pow(clamp(lethal_core_energy, 0.0, 1.5), 1.35) * 1.15;
+                // Composite Layer C (DOMINANT LETHAL CENTERPIECE): Deep Refracted Glacier Core + Crystalline Ice-Lance Cannon!
+                color = mix(color, magicColor(ice_crevice), clamp(spear_mask * 0.58, 0.0, 0.58));
+                float facet_contrast = clamp(core_facets * 0.55 + spear_ridge * 0.65, 0.0, 1.0);
+                vec3 core_glacier = mix(ice_far, ice_middle, facet_contrast);
+                vec3 core_rgb = core_glacier * (lethal_core_energy * 0.76)
+                              + ice_surface * pow(clamp(lethal_core_energy * (0.72 + 0.38 * facet_contrast), 0.0, 1.5), 1.35) * 1.18;
                 core_rgb = magicColor(core_rgb);
                 float core_peak = max(core_rgb.r, max(core_rgb.g, core_rgb.b));
-                vec3 core_material = core_rgb / (1.0 + core_peak * 0.55);
-                color = mix(color, core_material, clamp(lethal_core_energy * gain_m * 0.58, 0.0, 0.90));
+                vec3 core_material = core_rgb / (1.0 + core_peak * 0.54);
+                color = mix(color, core_material, clamp(lethal_core_energy * gain_m * 0.60, 0.0, 0.91));
                 bloom += (core_material * 0.20 + surround_rgb * 0.12) * gain_m;
             }
         }
@@ -669,7 +683,8 @@ void main() {
 
     // ═══════════════════════════════════════════════════════════════════════════
     // EFFECT OBJECTS:
-    // KIND 1, 2: PHOTOREALISTIC LIQUID WATER ORB + ORBITING 3D TIDAL RIBBONS + INERTIAL DEFORMATION
+    // KIND 1, 2: PHOTOREALISTIC LIQUID WATER ORB (晶莹剔透真实水球折射、连续流动焦散水纹、球面弯月高光、贴体旋涡水环)
+    //            + (KIND 2) 3D TILTED MACH WATER SONIC BOOM CLOUD (3D 环腰圆锥水爆音爆云盘) & HYDRO-JET WAKE
     // KIND 3: WATER SPLASH & DROPLET BURST
     // KIND 4: REALISTIC 3D VOLUMETRIC ROLLING FIREBALL + SPIRAL VORTEX PLUME & DARK SOOT CONTRAST
     // ═══════════════════════════════════════════════════════════════════════════
@@ -687,104 +702,211 @@ void main() {
                 vec2 obj_vel = m.xy;
                 if (mirrored == 1) obj_vel.x = -obj_vel.x;
                 float speed = length(obj_vel);
-                vec2 v_dir = (speed > 4.0) ? (obj_vel / speed) : vec2(1.0, 0.0);
+                vec2 v_dir = (speed > 4.0) ? (obj_vel / speed) : normalize(vec2(mirrored == 1 ? -1.0 : 1.0, -0.04));
                 vec2 v_ort = vec2(-v_dir.y, v_dir.x);
-                float stretch = clamp(speed / 620.0, 0.0, 0.28);
+                float stretch = clamp(speed / 650.0, 0.0, 0.18);
 
                 vec2 u_raw = p / r;
                 float proj_par = dot(u_raw, v_dir);
                 float proj_perp = dot(u_raw, v_ort);
-                vec2 u = v_dir * (proj_par / (1.0 + stretch * (proj_par < 0.0 ? 1.2 : 0.65)))
-                       + v_ort * (proj_perp * sqrt(1.0 + stretch * 0.75));
+
+                // ── KIND 2 BACKGROUND WAKE & AFT SONIC BOOM CONE (rendered behind the water sphere!) ──
+                float front_boom_mask = 0.0;
+                vec3 front_boom_col = vec3(0.0);
+                if (kind == 2 && proj_par > -3.80 && proj_par < 1.38 && abs(proj_perp) < 2.40) {
+                    float shot_age = max(0.0, m.z);
+                    float launch_burst = 0.62 + 0.38 * exp(-shot_age * 2.4);
+                    float gain_w = clamp(effect_gain, 0.45, 1.30) * o.w;
+                    float abs_perp = abs(proj_perp);
+
+                    // 1. Streamlined High-Speed Hydro-Jet Slipstream & Receding Shockwave Rings (高速流线型破空水柱尾羽与扩散激波水环!)
+                    if (proj_par < 0.10 && proj_par > -3.65) {
+                        float wake_u = clamp((-proj_par + 0.10) / 3.75, 0.0, 1.0);
+                        float wake_fade = pow(1.0 - wake_u, 1.55);
+                        float jet_half_w = mix(0.76, 0.10, pow(wake_u, 0.72));
+                        float jet_profile = exp(-pow(proj_perp / max(0.05, jet_half_w), 2.0));
+                        float jet_flow = ridgedFbm(vec2(proj_par * 3.2 - time * 14.0, proj_perp * 4.5));
+                        float jet_mist = fbm(vec2(proj_par * 2.4 - time * 10.0, proj_perp * 3.2));
+                        float jet_core = exp(-pow(proj_perp / max(0.03, jet_half_w * 0.38), 2.0)) * (0.6 + 0.4 * jet_flow) * wake_fade;
+
+                        // Coaxial receding hydro-shockwave rings punched along the trajectory
+                        float wake_rings = 0.0;
+                        for (int wr = 0; wr < 3; wr++) {
+                            float fwr = float(wr);
+                            float r_pos = -0.55 - mod(time * 3.2 + fwr * 0.95, 2.75);
+                            float r_prog = clamp(-r_pos / 3.3, 0.0, 1.0);
+                            float r_rad = 0.72 + r_prog * 0.65;
+                            vec2 rp = vec2((proj_par - r_pos) / 0.22, proj_perp / r_rad);
+                            float rd = abs(length(rp) - 1.0);
+                            wake_rings += exp(-pow(rd / 0.12, 2.0)) * (1.0 - r_prog) * (0.65 + 0.35 * cos(atan(rp.y, rp.x) * 6.0));
+                        }
+
+                        // Atomized high-speed water droplets in the wake
+                        vec2 drop_uv = vec2(proj_par * 3.2 - time * 12.0, proj_perp * 3.6);
+                        vec2 did = floor(drop_uv);
+                        vec2 df = fract(drop_uv) - 0.5;
+                        vec2 drnd = hash22(did + vec2(37.1, 83.7));
+                        float wake_drops = 0.0;
+                        if (drnd.x > 0.46 && abs_perp < jet_half_w * 1.45) {
+                            float d_r = length(df - (drnd - 0.5) * 0.35);
+                            wake_drops = (1.0 - smoothstep(0.03, 0.13, d_r)) * wake_fade;
+                        }
+
+                        float wake_alpha = clamp((jet_profile * (0.35 + 0.45 * jet_mist) * wake_fade * 0.65 + jet_core * 0.75 + wake_rings * 0.72 + wake_drops * 0.90) * gain_w, 0.0, 0.85);
+                        vec3 wake_col = mix(vec3(0.22, 0.62, 0.88), vec3(0.72, 0.92, 0.99), clamp(jet_flow * 0.6 + jet_core * 0.5, 0.0, 1.0));
+                        wake_col = mix(wake_col, vec3(0.97, 0.995, 1.00), clamp(wake_rings * 0.8 + wake_drops + jet_core * 0.6, 0.0, 1.0));
+                        color = mix(color, wake_col, wake_alpha);
+                    }
+
+                    // 2. 3D Tilted Prandtl-Glauert Conical Mach Vapor Disc & Skirt (3D 透视环腰圆锥「水爆音爆云」!)
+                    // Swept-back conical disc centered at proj_par = -0.18 wrapping around the water orb
+                    float disc_x = proj_par + 0.18 + 0.24 * pow(abs_perp, 1.25);
+                    vec2 d_ell = vec2(disc_x / 0.34, proj_perp / 1.58);
+                    float d_r = length(d_ell);
+                    float d_ang = atan(d_ell.y, d_ell.x);
+                    if (d_r < 1.35) {
+                        float n_mach = ridgedFbm(vec2(d_r * 4.5 - time * 9.0, d_ang * 3.8));
+                        float n_soft = fbm(vec2(d_r * 3.0 - time * 6.5, d_ang * 5.0 + 2.1));
+                        // Dense conical vapor cloud peaking around d_r in [0.48, 1.05] with radial shock striations
+                        float ring_profile = smoothstep(0.32, 0.62, d_r) * (1.0 - smoothstep(0.78, 1.28, d_r - 0.12 * n_soft));
+                        float radial_spikes = pow(0.5 + 0.5 * cos(d_ang * 14.0 - time * 4.0), 2.2) * smoothstep(0.55, 1.15, d_r) * (1.0 - smoothstep(1.05, 1.34, d_r));
+                        float boom_val = clamp((ring_profile * (0.62 + 0.48 * n_mach) + radial_spikes * 0.55) * launch_burst, 0.0, 1.35);
+                        vec3 b_col = mix(vec3(0.36, 0.68, 0.88), vec3(0.84, 0.95, 1.00), smoothstep(0.15, 0.70, boom_val));
+                        b_col = mix(b_col, vec3(0.98, 1.00, 1.00), smoothstep(0.55, 1.15, boom_val + n_mach * 0.3));
+                        // Back half of the 3D tilted cone renders behind the sphere; front half renders over the sphere waist!
+                        if (proj_par < -0.12) {
+                            color = mix(color, b_col, clamp(boom_val * 0.78 * gain_w, 0.0, 0.86));
+                        } else {
+                            front_boom_mask = clamp(boom_val * 0.82 * gain_w, 0.0, 0.88);
+                            front_boom_col = b_col;
+                        }
+                        bloom += b_col * boom_val * 0.22 * gain_w;
+                    }
+                }
+
+                vec2 u = v_dir * (proj_par / (1.0 + stretch * (proj_par < 0.0 ? 1.12 : 0.55)))
+                       + v_ort * (proj_perp * sqrt(1.0 + stretch * 0.55));
 
                 float u_len = length(u);
                 float ang = atan(u.y, u.x);
 
-                // 3D Orbiting Refractive Tidal Water Ribbons (两道 3D 环绕潮汐水绸带!)
-                if (u_len < 1.60) {
-                    for (int rib = 0; rib < 2; rib++) {
-                        float fr = float(rib);
-                        vec2 u_rot = rot(0.48 * (rib == 0 ? 1.0 : -1.0) + sin(time * 0.7 + fr) * 0.15) * u;
-                        vec2 ell = vec2(u_rot.x / 1.28, u_rot.y / 0.44);
-                        float er = length(ell);
-                        float ea = atan(ell.y, ell.x) + time * (2.2 + fr * 0.6) * (rib == 0 ? 1.0 : -1.0);
-                        bool in_front = (rib == 0 ? u_rot.y > 0.0 : u_rot.y < 0.0);
-                        if (in_front || u_len > 0.98) {
-                            float rib_w = 0.045 * (0.5 + 0.5 * sin(ea * 2.0));
-                            float rib_d = abs(er - 1.0);
-                            if (rib_d < rib_w) {
-                                float nz_rib = sqrt(max(0.0, 1.0 - (rib_d / rib_w) * (rib_d / rib_w)));
-                                vec2 r_uv = clamp(cam_uv - normalize(u_rot + 1e-4) * 0.018 * nz_rib, vec2(0.002), vec2(0.998));
-                                vec3 r_bg = texture(camera_tex, r_uv).rgb;
-                                float r_spec = pow(nz_rib, 16.0);
-                                float r_fres = pow(1.0 - nz_rib, 2.5);
-                                vec3 rib_col = r_bg * vec3(0.88, 0.98, 1.04) + vec3(0.55, 0.90, 1.0) * r_fres * 0.7 + vec3(1.0) * r_spec * 0.95;
-                                color = mix(color, rib_col, (1.0 - smoothstep(rib_w * 0.2, rib_w, rib_d)) * o.w * (in_front ? 0.85 : 0.45));
-                            }
+                // Organic Swirling Liquid Tendrils & Suspended Micro-Droplets Hugging the Sphere (贴体流动水旋涡与悬浮小水珠!)
+                if (u_len > 0.88 && u_len < 1.36) {
+                    float swirl_a = ang + time * 2.4 - u_len * 3.2;
+                    float tendril = pow(0.5 + 0.5 * sin(swirl_a * 3.0), 3.0)
+                                  * exp(-pow((u_len - 1.05) / 0.11, 2.0))
+                                  * (0.5 + 0.5 * fbm(u * 3.5 - time * 2.0));
+                    // 6 orbiting spherical water beads around the main orb
+                    float droplets = 0.0;
+                    float drop_spec = 0.0;
+                    for (int d_i = 0; d_i < 6; d_i++) {
+                        float fd = float(d_i);
+                        float da = fd * TAU / 6.0 + time * (1.1 + 0.15 * (d_i % 2 == 0 ? 1.0 : -1.0));
+                        float dr_orb = 1.12 + 0.08 * sin(time * 2.2 + fd * 1.7);
+                        vec2 d_pos = vec2(cos(da), sin(da) * 0.72) * dr_orb;
+                        float rad_b = 0.048 + 0.016 * cos(fd * 2.3);
+                        float dist_b = length(u - d_pos);
+                        if (dist_b < rad_b) {
+                            float bz = sqrt(max(0.0, 1.0 - (dist_b / rad_b) * (dist_b / rad_b)));
+                            droplets = max(droplets, 1.0 - smoothstep(rad_b * 0.7, rad_b, dist_b));
+                            drop_spec = max(drop_spec, pow(bz, 12.0));
                         }
                     }
+                    vec3 sur_water = vec3(0.48, 0.86, 0.98) * (tendril * 0.65 + droplets * 0.75) + vec3(0.98, 1.00, 1.00) * (tendril * 0.35 + drop_spec * 1.15);
+                    color = mix(color, sur_water, clamp((tendril * 0.55 + droplets * 0.85) * o.w, 0.0, 0.82));
                 }
 
-                float slosh = 0.026 * sin(ang * 3.0 - time * 4.0 + m.z)
-                            + 0.016 * cos(ang * 5.0 + time * 5.8)
-                            + 0.009 * sin(ang * 8.0 - time * 7.5);
+                float slosh = 0.022 * sin(ang * 3.0 - time * 3.8 + m.z)
+                            + 0.012 * cos(ang * 5.0 + time * 5.2)
+                            + 0.007 * sin(ang * 7.0 - time * 6.8);
                 vec2 u_liq = u * (1.0 - slosh);
                 float d2 = dot(u_liq, u_liq);
 
                 if (d2 < 1.0) {
                     float z = sqrt(max(0.0, 1.0 - d2));
-                    vec2 wp = u_liq * 2.2 + vec2(time * 1.2, -time * 0.95);
-                    float h0 = fbm(wp);
-                    float hx = fbm(wp + vec2(0.07, 0.0)) - h0;
-                    float hy = fbm(wp + vec2(0.0, 0.07)) - h0;
-                    vec3 N = normalize(vec3(u_liq.x + hx * 1.85, u_liq.y + hy * 1.85, z));
+                    vec2 wp = u_liq * 2.0 + vec2(time * 1.05, -time * 0.85);
+                    vec2 warp_w = vec2(
+                        fbm(wp + vec2(0.0, time * 0.6)) - 0.5,
+                        fbm(wp + vec2(3.7, -time * 0.6)) - 0.5
+                    );
+                    float h0 = fbm(wp + warp_w * 0.65);
+                    float hx = fbm(wp + warp_w * 0.65 + vec2(0.08, 0.0)) - h0;
+                    float hy = fbm(wp + warp_w * 0.65 + vec2(0.0, 0.08)) - h0;
+                    vec3 N = normalize(vec3(u_liq.x + hx * 1.35, u_liq.y + hy * 1.35, z));
 
+                    // Snell spherical lens refraction of the background camera feed
                     vec3 R_vec = refract(vec3(0.0, 0.0, -1.0), N, 1.0 / 1.333);
-                    vec2 refr_uv = clamp(cam_uv + R_vec.xy * (0.092 * (1.0 - z * 0.28)), vec2(0.002), vec2(0.998));
+                    vec2 refr_uv = clamp(cam_uv + R_vec.xy * (0.088 * (1.0 - z * 0.30)), vec2(0.002), vec2(0.998));
                     vec3 refracted_bg = vec3(
-                        texture(camera_tex, clamp(refr_uv + N.xy * 0.003 * (1.0 - z), vec2(0.002), vec2(0.998))).r,
+                        texture(camera_tex, clamp(refr_uv + N.xy * 0.0025 * (1.0 - z), vec2(0.002), vec2(0.998))).r,
                         texture(camera_tex, refr_uv).g,
-                        texture(camera_tex, clamp(refr_uv - N.xy * 0.003 * (1.0 - z), vec2(0.002), vec2(0.998))).b
+                        texture(camera_tex, clamp(refr_uv - N.xy * 0.0025 * (1.0 - z), vec2(0.002), vec2(0.998))).b
                     );
 
-                    float focus_grad = clamp(dot(u_liq, normalize(vec2(0.55, 0.60))) * 0.65 + 0.35, 0.0, 1.0);
-                    vec3 absorption = exp(-vec3(0.26, 0.045, 0.01) * (1.0 - z * 0.65) * 1.2);
-                    vec3 clear_water = refracted_bg * absorption + vec3(0.04, 0.22, 0.34) * pow(focus_grad, 2.2) * z;
+                    // Natural crystal-clear aqua refraction & bottom-right internal caustic focusing
+                    float focus_grad = clamp(dot(u_liq, normalize(vec2(0.52, 0.62))) * 0.62 + 0.38, 0.0, 1.0);
+                    float path_len = (1.0 - z * 0.68) * 1.20;
+                    vec3 absorption = exp(-vec3(0.24, 0.042, 0.008) * path_len);
+                    vec3 clear_water = refracted_bg * absorption
+                                     + vec3(0.02, 0.14, 0.26) * (1.0 - z) * 0.48
+                                     + vec3(0.10, 0.44, 0.66) * pow(focus_grad, 2.1) * z * 0.92;
 
-                    float c_flow = sin(u_liq.x * 7.5 + u_liq.y * 5.5 + h0 * 5.0 - time * 2.8) * cos(u_liq.x * 5.0 - u_liq.y * 8.0 + time * 2.2);
-                    float smooth_caustic = pow(smoothstep(0.35, 0.95, c_flow * 0.5 + 0.5), 3.0) * z * (0.4 + 0.6 * focus_grad);
-                    float tir_crescent = pow(max(0.0, dot(N, normalize(vec3(0.55, 0.62, 0.56)))), 11.0) * pow(1.0 - z, 1.3);
+                    // Continuous interconnected ridged caustic network
+                    vec2 caust_uv = N.xy * 2.5 + warp_w * 0.85 + vec2(time * 0.75, -time * 0.55);
+                    float caust_net = ridgedFbm(caust_uv);
+                    float smooth_caustic = pow(clamp(caust_net, 0.0, 1.0), 2.4) * z * (0.38 + 0.62 * focus_grad);
 
-                    float fresnel = 0.02 + 0.98 * pow(1.0 - max(0.0, N.z), 4.4);
-                    vec2 ref_uv = N.xy - vec2(-0.38, -0.44);
-                    vec2 win_p = rot(-0.52) * ref_uv;
-                    float win_box = max(abs(win_p.x) - 0.16, abs(win_p.y) - 0.095);
-                    float win_pane = (1.0 - smoothstep(-0.012, 0.025, win_box)) * smoothstep(0.004, 0.018, abs(win_p.x)) * smoothstep(0.004, 0.016, abs(win_p.y));
-                    vec3 H_sun = normalize(vec3(-0.42, -0.48, 1.75));
-                    float spec_pin = pow(max(0.0, dot(N, H_sun)), 220.0);
+                    // Sub-surface Total Internal Reflection (TIR) luminous crescent at the lower-right rim
+                    float tir_crescent = pow(max(0.0, dot(N, normalize(vec3(0.52, 0.60, 0.58)))), 7.0) * pow(1.0 - z, 1.20);
 
-                    float pearl_bubbles = 0.0;
+                    // Broad Curved Spherical Meniscus Highlight & Crisp Fresnel Rim (真实水滴球面弯月形通透高光带!)
+                    float fresnel = 0.05 + 0.95 * pow(1.0 - max(0.0, N.z), 3.4);
+                    float r_norm = sqrt(d2);
+                    float a_norm = atan(u_liq.y + hx * 0.18, u_liq.x + hy * 0.18);
+                    float arc_ang = abs(mod(a_norm - (-2.18) + PI, TAU) - PI);
+                    float meniscus_arc = exp(-pow((r_norm - 0.72) / 0.085, 2.0)) * exp(-pow(arc_ang / 0.62, 2.0));
+                    float meniscus_dot = exp(-pow(length(u_liq - vec2(-0.34, -0.58)) / 0.065, 2.0));
+                    vec3 H_secondary = normalize(vec3(0.38, 0.44, 0.81));
+                    float spec_back = pow(max(0.0, dot(N, H_secondary)), 28.0) * (1.0 - z) * 0.48;
+
+                    // Internal rising micro-bubbles following swirl streamlines
+                    float bubbles = 0.0;
                     for (int b_i = 0; b_i < 4; b_i++) {
                         float fb = float(b_i);
-                        float by = 0.55 - mod(time * (0.35 + fb * 0.08) + fb * 0.37, 1.10);
-                        float bx = sin(time * 1.8 + fb * 2.4) * 0.28 + (fb - 1.5) * 0.15;
+                        float by = 0.52 - mod(time * (0.32 + fb * 0.07) + fb * 0.39, 1.04);
+                        float bx = sin(time * 1.6 + fb * 2.3) * 0.26 + (fb - 1.5) * 0.14;
                         vec2 bp = u_liq - vec2(bx, by);
-                        float br = 0.032 + 0.012 * sin(fb * 3.1);
+                        float br = 0.024 + 0.010 * sin(fb * 3.1);
                         float bd = length(bp);
-                        if (bd < br && d2 < 0.72) {
+                        if (bd < br && d2 < 0.74) {
                             float bz = sqrt(max(0.0, 1.0 - (bd / br) * (bd / br)));
-                            pearl_bubbles += pow(1.0 - bz, 2.2) * 0.75 + (1.0 - smoothstep(0.0, br * 0.45, length(bp + vec2(br * 0.3, br * 0.3)))) * 1.35;
+                            bubbles += pow(1.0 - bz, 2.0) * 0.85 + (1.0 - smoothstep(0.0, br * 0.42, length(bp + vec2(br * 0.28, br * 0.28)))) * 1.25;
                         }
                     }
 
                     vec3 water_rgb = clear_water
-                                   + vec3(0.42, 0.88, 1.00) * (smooth_caustic * 0.42 + tir_crescent * 0.82)
-                                   + vec3(0.80, 0.95, 1.00) * fresnel * 0.96
-                                   + vec3(0.98, 1.00, 1.00) * (win_pane * 0.92 + spec_pin * 1.50 + pearl_bubbles);
+                                   + vec3(0.38, 0.86, 1.00) * (smooth_caustic * 0.58 + tir_crescent * 0.92)
+                                   + vec3(0.78, 0.95, 1.00) * (fresnel * 0.92 + spec_back)
+                                   + vec3(0.98, 1.00, 1.00) * (meniscus_arc * 0.95 + meniscus_dot * 1.15 + bubbles);
 
-                    float edge_aa = (1.0 - smoothstep(0.935, 1.0, d2)) * o.w;
+                    float edge_aa = (1.0 - smoothstep(0.92, 1.0, d2)) * o.w;
                     color = mix(color, water_rgb, edge_aa);
-                    bloom += (vec3(0.65, 0.92, 1.0) * (fresnel * 0.32 + tir_crescent * 0.40) + vec3(1.0) * (win_pane * 0.55 + spec_pin)) * edge_aa;
+                    bloom += (vec3(0.55, 0.90, 1.0) * (fresnel * 0.30 + tir_crescent * 0.38) + vec3(1.0) * (meniscus_arc * 0.55 + meniscus_dot * 0.65)) * edge_aa;
+                }
+
+                // Composite the front half of the 3D Mach sonic-boom vapor ring & leading bow shockwave over the flying orb!
+                if (kind == 2) {
+                    if (front_boom_mask > 0.01) {
+                        color = mix(color, front_boom_col, front_boom_mask);
+                    }
+                    if (proj_par > 0.25 && proj_par < 1.34 && abs(proj_perp) < 1.32) {
+                        float gain_w = clamp(effect_gain, 0.45, 1.30) * o.w;
+                        float bow_curve = 1.06 - 0.36 * proj_perp * proj_perp;
+                        float bow_d = abs(proj_par - bow_curve);
+                        float bow_arc = exp(-pow(bow_d / 0.065, 2.0)) * (1.0 - smoothstep(0.62, 1.24, abs(proj_perp)));
+                        vec3 bow_col = mix(vec3(0.62, 0.88, 0.98), vec3(0.98, 1.00, 1.00), bow_arc);
+                        color = mix(color, bow_col, clamp(bow_arc * 0.82 * gain_w, 0.0, 0.86));
+                    }
                 }
             }
             else if (kind == 3) {

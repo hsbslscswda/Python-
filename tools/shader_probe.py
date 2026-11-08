@@ -11,6 +11,7 @@ import moderngl
 import numpy as np
 from PySide6.QtGui import QGuiApplication, QOffscreenSurface, QOpenGLContext, QSurfaceFormat
 
+from mirror_moon import __version__
 from mirror_moon.mirror_texture import MIRROR_ASPECT, mirror_texture
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,6 +24,9 @@ void main() { gl_Position=vec4(position,0,1); uv=position*0.5+0.5; }
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--comparison", type=Path)
+    parser.add_argument(
+        "--comparison-label", default="comparison", help="Actual version of the comparison shader"
+    )
     parser.add_argument("--output", type=Path, default=ROOT / "local/shader-probe")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
@@ -110,6 +114,33 @@ def main():
     current = draw(source, flat, (640, 360))
     cv2.imwrite(str(args.output / "array-after.png"), cv2.cvtColor(current, cv2.COLOR_RGB2BGR))
     report = {"synthetic_only": True, "renderer": ctx.info["GL_RENDERER"]}
+    # The disk normal follows torso yaw, not the hand's screen position.
+    frontal = draw(source, flat, (640, 360), quality=1, palm=(420.0, 260.0), body_yaw=0.0)
+    moved_hand = draw(source, flat, (640, 360), quality=1, palm=(550.0, 310.0), body_yaw=0.0)
+    assert np.array_equal(frontal, moved_hand), "Casting hand must not turn a frontal torso's disk sideways"
+    report["frontal_disk_independent_of_hand_reach"] = True
+    for yaw in (-1.0, 0.0, 1.0):
+        pixels = draw(source, flat, (640, 360), quality=1, intensity=1.4, body_yaw=yaw)
+        cv2.imwrite(
+            str(args.output / ("ice-yaw-" + str(yaw) + ".png")), cv2.cvtColor(pixels, cv2.COLOR_RGB2BGR)
+        )
+    motions = [(0.0, 0.0, 0.0, 0.0)] * 12
+    objects = [(350.0, 205.0, 48.0, 1.0)] + [(0.0, 0.0, 0.0, 0.0)] * 11
+    for kind in (1, 2):
+        motions[0] = (420.0, -8.0, 7.0, float(kind))
+        pixels = draw(
+            source,
+            flat,
+            (640, 360),
+            quality=1,
+            mode=3,
+            object_count=1,
+            objects=objects,
+            object_motion=motions,
+        )
+        cv2.imwrite(
+            str(args.output / ("water-kind-" + str(kind) + ".png")), cv2.cvtColor(pixels, cv2.COLOR_RGB2BGR)
+        )
     if args.comparison:
         before = draw(args.comparison.read_text("utf-8"), flat, (640, 360))
         cv2.imwrite(str(args.output / "array-before.png"), cv2.cvtColor(before, cv2.COLOR_RGB2BGR))
@@ -179,7 +210,10 @@ def main():
     if args.comparison:
         runs = []
         for quality in (0, 1, 2):
-            for label, fragment in (("v0.4.2", args.comparison.read_text("utf-8")), ("v0.4.3", source)):
+            for label, fragment in (
+                (args.comparison_label, args.comparison.read_text("utf-8")),
+                ("v" + __version__, source),
+            ):
                 timing = {"version": label, "quality": quality}
                 draw(
                     fragment,

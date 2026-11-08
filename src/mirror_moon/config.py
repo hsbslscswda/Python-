@@ -47,10 +47,11 @@ class Thresholds:
     water_palm_offset: float = 0.05
     water_levitation: float = 0.11
     water_grip_hold: float = 0.15
-    water_launch_speed: float = 4.5
+    water_launch_speed: float = 4.6
     water_spring: float = 65.0
     water_damping: float = 13.0
-    water_gravity: float = 1.8
+    water_gravity: float = 0.04
+    water_reopen_cooldown: float = 0.65
     lowered_close_hold: float = 0.30
     clap_distance: float = 0.24
     clap_speed: float = 0.9
