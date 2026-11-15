@@ -33,6 +33,10 @@ class Arm:
     normal: Point3 | None = None
     openness: float | None = None
     palm_scale: float = 0.0
+    palm_normal: Point3 | None = None
+    palm_normal_quality: float | None = None
+    hand_world: tuple[Point3, ...] = ()
+    finger_angles: tuple[float, ...] = ()
     upper_valid: bool = False
 
     @property
@@ -95,6 +99,10 @@ class SpellView:
     folded: bool = False
     hint: str = "一手握拳横在胸前，召唤冰魔法法阵"
     quality: str = "等待人物"
+    ray_start: Point | None = None
+    ray_end: Point | None = None
+    palm_line_start: Point | None = None
+    palm_line_end: Point | None = None
     control_reliable: bool = True
     objects: tuple = ()
 

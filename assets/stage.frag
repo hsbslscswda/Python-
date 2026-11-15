@@ -791,7 +791,7 @@ void main() {
                 float ang = atan(u.y, u.x);
 
                 // Organic Swirling Liquid Tendrils & Suspended Micro-Droplets Hugging the Sphere (贴体流动水旋涡与悬浮小水珠!)
-                if (u_len > 0.88 && u_len < 1.36) {
+                if (kind == 2 && u_len > 0.88 && u_len < 1.36) {
                     float swirl_a = ang + time * 2.4 - u_len * 3.2;
                     float tendril = pow(0.5 + 0.5 * sin(swirl_a * 3.0), 3.0)
                                   * exp(-pow((u_len - 1.05) / 0.11, 2.0))
@@ -819,6 +819,7 @@ void main() {
                 float slosh = 0.022 * sin(ang * 3.0 - time * 3.8 + m.z)
                             + 0.012 * cos(ang * 5.0 + time * 5.2)
                             + 0.007 * sin(ang * 7.0 - time * 6.8);
+                if (kind == 1) slosh = 0.0; // Fixed held-orb silhouette; only resize changes its radius.
                 vec2 u_liq = u * (1.0 - slosh);
                 float d2 = dot(u_liq, u_liq);
 

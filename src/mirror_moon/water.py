@@ -1,67 +1,28 @@
-"""Persistent water, damped spring following and bounded 3D ballistic visual simulation.
+"""Owner-session water magic with palm-normal attachment and ray/palm resizing.
 
-Monocular metric scale, palm offset and other-person collision are estimates, not measured depth.
+Inter-hand translation and centimeter scale are monocular estimates.
 """
-
 import math
-from dataclasses import dataclass
-
+from dataclasses import dataclass, replace
 from .config import DEFAULTS
 from .domain import EffectObject, Shape, SpellView
-from .geometry import Hold, arm_lowered, both_arms_dropped_out, distance, segment_distance
+from .geometry import Hold, arm_lowered, fingertip_polygon, open_over_90
 
 
 def fresh(a):
     return a.hand_valid and a.shape_age <= DEFAULTS.gesture_max_age
 
 
-class Clap:
-    def __init__(self, cfg=DEFAULTS):
-        self.cfg, self.previous, self.approach_until = cfg, None, -1e9
-        self.opposing_intent = False
+def dot(a, b):
+    return sum(x*y for x, y in zip(a, b))
 
-    def update(self, f):
-        a, b = f.arms
-        if not all(fresh(x) for x in (a, b)):
-            self.previous = None
-            # Contact can hide fingers; only current reliable Pose wrists may
-            # complete a previously observed, opposed closing trajectory.
-            observed_wrists = all(x.wrist_confidence >= 0.60 and (x.tracked or x.upper_valid) for x in (a, b))
-            d = distance(a.pose_wrist or a.wrist, b.pose_wrist or b.wrist) / max(1.0, f.scale)
-            if (
-                f.valid
-                and observed_wrists
-                and self.opposing_intent
-                and f.timestamp <= self.approach_until
-                and d < self.cfg.clap_distance
-            ):
-                self.approach_until = -1e9
-                return True
-            return False
-        d = distance(a.palm or a.wrist, b.palm or b.wrist) / max(1.0, f.scale)
-        opposing = (
-            a.normal is None or b.normal is None or sum(x * y for x, y in zip(a.normal, b.normal)) < -0.15
-        )
-        open_hands = all(x.shape in (Shape.OPEN, Shape.OTHER, Shape.PINCH) for x in (a, b))
-        if self.previous:
-            stamp, before = self.previous
-            dt = f.timestamp - stamp
-            if 0 < dt < 0.35 and (before - d) / dt > self.cfg.clap_speed and before > 0.35:
-                self.approach_until = f.timestamp + 0.25
-                self.opposing_intent = opposing and open_hands
-            elif d > before + 0.03:
-                self.approach_until = -1e9
-        self.previous = f.timestamp, d
-        hit = (
-            open_hands
-            and opposing
-            and self.opposing_intent
-            and d < self.cfg.clap_distance
-            and f.timestamp <= self.approach_until
-        )
-        if hit:
-            self.approach_until = -1e9
-        return hit
+
+def sub(a, b):
+    return tuple(x-y for x, y in zip(a, b))
+
+
+def cross(a, b):
+    return (a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0])
 
 
 @dataclass
@@ -75,438 +36,324 @@ class Shot:
 
 class Water:
     def __init__(self, cfg=DEFAULTS):
-        self.cfg, self.hold, self.clap = cfg, Hold(), Clap(cfg)
-        self.enabled = False
-        self.has_orb = False
+        self.cfg, self.hold = cfg, Hold()
+        self.enabled = self.has_orb = self.scaling = False
+        self.fist_started = {}
         self.owner = None
-        self.fists = set()
-        self.fist_times = {}
-        self.position, self.velocity = [0.0, 0.0, 2.0], [0.0] * 3
+        self.support = None
+        self.magic_running = False
+        self.session_depth = None
+        self.ray_origin = None
+        self.owner_palm = None
+        self.ray_direction = None
+        self.position = [0.0, 0.0, 2.0]
         self.radius = 0.075
+        self.display_radius = 48.0
         self.shots, self.splashes = [], []
         self.last_t = None
-        self.spawned_at = -1e9
-        self.recall_at = self.grip_cooldown = self.reopen_cooldown = -1e9
-        self.grip_far, self.seed = True, 0
-        self.scaling = False
-        self.scaling_grace_until = -1e9
-        self.scale_blend = 0.0
-        self.resize_target = None
-        self.pinch_span = None
-        self.pinch_base_radius = 0.075
-        self.hand_seen = {"left": -1e9, "right": -1e9}
-        self.last_b_wrist = None
-        self.last_b_d = 99.0
-        self.last_projection = (0.0, 0.0)
-        self.last_frame = None
+        self.seed = 0
+        self.opened = False
+        self.first_fist_released = False
+        self.resize_span = None
+        self.resize_radius = self.radius
+        self.normal_last_t = None
+        self.normal_pending = None
+        self.normal_pending_since = None
+        self.last_hand_time = -1e9
+        self.palm_wrist_offset = (0.0,0.0)
+        self.resize_ray_t = None
+        self.resize_hit = None
+        self.support_palm = None
+        self.intersection_status = 'unknown'
+        self.opened_at = 0.0
+        self.tracking_status = '等待手部'
+
 
     @staticmethod
     def camera(f):
         return f.width * 0.9
 
+    def project(self, p, f):
+        k = self.camera(f) / max(0.18, p[2])
+        return (f.width/2 + p[0]*k, f.height/2 + p[1]*k), k
+
+    def palm_origin(self, a, f):
+        focal = self.camera(f)
+        if self.session_depth is None:
+            z = focal*0.40/max(50.0, f.scale) if f.valid else focal*0.08/max(15.0, a.palm_scale)
+            self.session_depth = max(0.4, min(6.0, z))
+        z = self.session_depth
+        palm = a.palm or a.wrist
+        return ((palm[0]-f.width/2)*z/focal, (palm[1]-f.height/2)*z/focal, z)
+
+    def observed_normal(self, a):
+        if a.palm_normal_quality is None:
+            return a.normal  # Explicit synthetic fixtures / legacy recordings.
+        return a.palm_normal if a.palm_normal_quality >= 0.2 else None
+
+    def update_ray(self, a, f):
+        self.ray_origin = self.palm_origin(a, f)
+        normal=self.observed_normal(a)
+        if normal is None:
+            self.normal_pending=self.normal_pending_since=None
+            return False
+        length=math.sqrt(dot(normal,normal))
+        if not math.isfinite(length) or length<1e-6:
+            return False
+        normal=tuple(v/length for v in normal)
+        # Direct attachment: accept the current measured palm direction now.
+        self.ray_direction=normal
+        self.normal_pending=self.normal_pending_since=None
+        return True
+
+    def target(self, a, f):
+        # The caller has already updated the observed ray once this frame.
+        # Solve r = screen_radius * center_depth / focal, keeping the visible
+        # radius invariant while the palm normal rotates. Surface gap is 0.08m.
+        n, origin = self.ray_direction, self.ray_origin
+        r = self.display_radius*(origin[2]+n[2]*0.08)/(self.camera(f)-self.display_radius*n[2])
+        self.radius = max(0.001, r)
+        return [x+v*(self.radius+0.08) for x,v in zip(origin,n)]
+
+    def palm_intersection(self, a, b, f):
+        self.intersection_status = 'unknown'
+        # Opening is a prerequisite, checked BEFORE any ray/region geometry.
+        if not self.scaling and (not fresh(b) or not open_over_90(b)):
+            return None
+        if not (fresh(a) and fresh(b) and len(b.landmarks)==21 and self.ray_direction):
+            return None
+        origin, n = self.ray_origin, self.ray_direction
+        start, _ = self.project(origin,f)
+        end, _ = self.project([x+v*0.15 for x,v in zip(origin,n)],f)
+        dx,dy=end[0]-start[0],end[1]-start[1]
+        length=math.hypot(dx,dy)
+        if length<1.0:
+            return None  # Facing the camera belongs to launch, not resizing.
+        dx,dy=dx/length,dy/length
+        polygon=fingertip_polygon(b.landmarks)
+        if len(polygon)<3:
+            return None
+        intersections=[]
+        # A ray starting inside the tip boundary has only one positive edge hit.
+        inside=all((polygon[(i+1)%len(polygon)][0]-p[0])*(start[1]-p[1])-
+                   (polygon[(i+1)%len(polygon)][1]-p[1])*(start[0]-p[0])>=-1e-6
+                   for i,p in enumerate(polygon))
+        if inside:intersections.append(0.0)
+        for j,p0 in enumerate(polygon):
+            p1=polygon[(j+1)%len(polygon)]
+            ex,ey=p1[0]-p0[0],p1[1]-p0[1]
+            det=dx*ey-dy*ex
+            if abs(det)<1e-8:
+                continue
+            qx,qy=p0[0]-start[0],p0[1]-start[1]
+            along=(qx*ey-qy*ex)/det
+            edge=(qx*dy-qy*dx)/det
+            if along>0 and -1e-6<=edge<=1+1e-6:
+                intersections.append(along)
+        # A collapsed side-view palm is unobservable, not proof of departure.
+        area=abs(sum(polygon[i][0]*polygon[(i+1)%len(polygon)][1]-polygon[(i+1)%len(polygon)][0]*polygon[i][1] for i in range(len(polygon))))*0.5
+        if area<max(4.0,b.palm_scale*b.palm_scale*0.025):
+            return None
+        if len(intersections)<2:
+            self.intersection_status='miss'
+            return None
+        lo,hi=min(intersections),max(intersections)
+        # Closed region: both boundary and interior count. For an origin already
+        # inside, use the middle of the positive interior interval, avoiding a zero-length segment.
+        along=lo if lo>1e-5 else hi*0.5
+        hit=(start[0]+dx*along,start[1]+dy*along)
+        axis=0 if abs(dx)>abs(dy) else 1
+        q=(hit[axis]-(f.width if axis==0 else f.height)/2)/self.camera(f)
+        denom=n[axis]-q*n[2]
+        if abs(denom)<1e-8:
+            return None
+        ray_t=(q*origin[2]-origin[axis])/denom
+        if ray_t<=0 or origin[2]+ray_t*n[2]<0.20:
+            return None
+        self.intersection_status='hit'
+        self.current_ray_t=ray_t
+        midpoint=((start[0]+hit[0])*0.5,(start[1]+hit[1])*0.5)
+        # Boundary crossing governs membership only. Radius must respond to
+        # palm separation, not a moving edge hit when the normal trembles.
+        if b.palm is None:
+            self.intersection_status='unknown'
+            return None
+        span=math.dist(start,b.palm)
+        if span<max(8.0,min(a.palm_scale,b.palm_scale)*0.25):
+            self.intersection_status='unknown'
+            return None
+        return span, self.point_on_ray(midpoint,f)
+
+    def point_on_ray(self, pixel, f):
+        """Back-project a screen point on the ray without leaving its 3D line."""
+        origin,n=self.ray_origin,self.ray_direction
+        q=((pixel[0]-f.width*0.5)/self.camera(f),(pixel[1]-f.height*0.5)/self.camera(f))
+        denominators=(n[0]-q[0]*n[2],n[1]-q[1]*n[2])
+        axis=0 if abs(denominators[0])>=abs(denominators[1]) else 1
+        if abs(denominators[axis])<1e-9:
+            return list(self.position)
+        t=(q[axis]*origin[2]-origin[axis])/denominators[axis]
+        return [x+v*t for x,v in zip(origin,n)]
+
+    def scaling_position(self,f,b):
+        # The ray is ONLY the geometric lifecycle test. Never aim it at b.
+        self.resize_hit=tuple(x+n*self.resize_ray_t for x,n in zip(self.ray_origin,self.ray_direction))
+        if fresh(b) and b.palm is not None:
+            self.support_palm=tuple(b.palm)
+        start,_=self.project(self.ray_origin,f)
+        end=self.support_palm
+        midpoint=((start[0]+end[0])*0.5,(start[1]+end[1])*0.5)
+        # Use the session's shared estimated depth so both palms and their
+        # midpoint have consistent screen projection; do NOT project onto the ray.
+        z=self.ray_origin[2]
+        return [(midpoint[0]-f.width*.5)*z/self.camera(f),
+                (midpoint[1]-f.height*.5)*z/self.camera(f),z]
+
     def pause(self, timestamp):
-        delta = max(0.0, timestamp - self.last_t) if self.last_t is not None else 0.0
+        delta = max(0.0, timestamp-self.last_t) if self.last_t is not None else 0.0
         self.last_t = timestamp
         for shot in self.shots:
             shot.born += delta
-        self.splashes = [(stamp + delta, c, r, seed) for stamp, c, r, seed in self.splashes]
-        self.recall_at += delta
-        self.grip_cooldown += delta
-        self.reopen_cooldown += delta
-        self.scaling_grace_until += delta
-        for side in list(self.fist_times):
-            self.fist_times[side] += delta
+        self.splashes = [(t+delta, c, r, seed) for t, c, r, seed in self.splashes]
         self.hold.clear()
-        self.grip_far = True
-        self.pinch_span = None
-        self.clap.previous = None
-        self.clap.approach_until = -1e9
+        self.fist_started.clear()
 
-    def project(self, p, f):
-        z = max(0.18, p[2])
-        k = self.camera(f) / z
-        return (f.width / 2 + p[0] * k, f.height / 2 + p[1] * k), k
-
-    def target(self, a, f):
-        focal = self.camera(f)
-        z = focal * 0.40 / max(50.0, f.scale) if f.valid else focal * 0.08 / max(15.0, a.palm_scale)
-        z = max(0.4, min(6.0, z))
-        palm = a.palm or a.wrist
-        normal = a.normal or (0.0, -0.65, -0.76)
-        offset = self.radius + self.cfg.water_palm_offset
-        return [
-            (palm[0] - f.width / 2) * z / focal + normal[0] * offset,
-            (palm[1] - f.height / 2) * z / focal + normal[1] * offset,
-            max(0.30, z + normal[2] * offset),
-        ]
-
-    def _resize_midpoint(self, a, b, f):
-        # Both hands share one estimated depth so projection remains an exact 50/50 screen anchor.
-        depth = (self.target(a, f)[2] + self.target(b, f)[2]) * 0.5
-        pa, pb = a.palm or a.wrist, b.palm or b.wrist
-        focal = self.camera(f)
-        return [
-            ((pa[0] + pb[0]) * 0.5 - f.width * 0.5) * depth / focal,
-            ((pa[1] + pb[1]) * 0.5 - f.height * 0.5) * depth / focal,
-            depth,
-        ]
-
-    def _aim_direction(self, a, f):
-        """Estimate a horizontal launch direction from observed forearm, fingers and palm."""
-        normal = a.normal or (0.0, 0.0, -1.0)
-        pa = a.palm or a.wrist
-        fore_dx = fore_dy = 0.0
-        if f is not None and (a.upper_valid or a.tracked) and distance(a.elbow, pa) > 12.0:
-            s = max(40.0, f.scale)
-            fore_dx = (pa[0] - a.elbow[0]) / s
-            fore_dy = (pa[1] - a.elbow[1]) / s
-        finger_dx = 0.0
-        if a.landmarks and len(a.landmarks) > 9:
-            finger_dx = (a.landmarks[9][0] - a.landmarks[0][0]) / max(18.0, a.palm_scale)
-
-        if abs(fore_dx) > 0.26 or abs(finger_dx) > 0.36:
-            aim_x = max(-0.92, min(0.92, fore_dx * 0.82 + finger_dx * 0.32 + normal[0] * 0.20))
-        else:
-            aim_x = max(-0.68, min(0.68, normal[0] * 0.55 + fore_dx * 0.45))
-
-        # Keep vertical launch trajectory flat (linear translation / 平移) rather than shooting up when palm is up!
-        aim_y = max(-0.08, min(0.08, fore_dy * 0.14))
-        aim_z = -math.sqrt(max(0.18, 1.0 - min(0.82, aim_x * aim_x + aim_y * aim_y)))
-        norm = math.sqrt(aim_x * aim_x + aim_y * aim_y + aim_z * aim_z) or 1.0
-        return (aim_x / norm, aim_y / norm, aim_z / norm)
-
-    def _launch_orb(self, a, center, scale, t, f=None):
-        ref_f = f or self.last_frame
-        direction = self._aim_direction(a, ref_f)
-        velocity = [d * self.cfg.water_launch_speed for d in direction]
-        self.seed += 1
-        # Convert the exact displayed lift back to world space: resizing must not snap at release.
-        lift = max(20.0, self.radius * scale * 1.25) / max(1.0, scale)
-        spawn_pos = [self.position[0], self.position[1] - lift, self.position[2]]
-        self.shots.append(Shot(spawn_pos, velocity, self.radius, t, self.seed))
-        self.shots = self.shots[-8:]
-        # Once launched, the orb flies away and does NOT auto-respawn in place after 0.85s!
-        # A fresh FIST -> OPEN gesture is required to summon the next water orb.
-        self.has_orb = False
-        self.recall_at = float("inf")
-        self.grip_cooldown = t + 0.75
-        self.reopen_cooldown = t + self.cfg.water_reopen_cooldown
-        self.grip_far = False
-        self.fists.clear()
-        self.fist_times.clear()
-        self.pinch_span = None
-        self.scaling = False
-        self.scaling_grace_until = -1e9
-        self.scale_blend = 0.0
+    def end_session(self, f):
+        self.enabled = self.has_orb = self.scaling = self.opened = False
+        self.owner = self.support = None
+        self.magic_running = False
+        self.session_depth = None
+        self.ray_origin = self.ray_direction = None
+        self.owner_palm = None
+        self.resize_span = None
         self.hold.clear()
-        self.resize_target = None
-        return ("water_launch", (center,), 1.0)
+        self.fist_started.clear()
+        self.resize_ray_t=None
+        self.resize_hit=None
+        self.support_palm=None
+        self.normal_pending=self.normal_pending_since=None
+        self.last_hand_time=-1e9
 
     def update(self, f):
-        self.last_frame = f
         t, events = f.timestamp, []
-        dt = min(0.20, max(0.0, t - self.last_t)) if self.last_t is not None else 0.0
-        if self.last_t is not None and t - self.last_t > 0.5:
+        dt = min(0.20, max(0.0, t-self.last_t)) if self.last_t is not None else 0.0
+        if self.last_t is not None and (t-self.last_t > 0.5 or t < self.last_t):
             self.hold.clear()
-            self.grip_far = True
-            self.pinch_span = None
-            self.scaling_grace_until = -1e9
-            self.clap.previous = None
+            self.fist_started.clear()
         self.last_t = t
-        for arm in f.arms:
-            if fresh(arm):
-                self.hand_seen[arm.side] = t
-        if self.enabled and self.clap.update(f):
-            self.enabled = False
-            self.has_orb = False
-            self.shots.clear()
-            self.splashes.clear()
-            self.fists.clear()
-            self.fist_times.clear()
-            self.hold.clear()
-            self.pinch_span = None
-            self.scaling = False
-            self.scaling_grace_until = -1e9
-            self.scale_blend = 0.0
-            self.reopen_cooldown = t + self.cfg.water_reopen_cooldown
-            return SpellView(mode="water", state="OFF", hint="水球已拍散；握拳再摊开重新召唤"), [
-                ("water_close", (), 0.0)
-            ]
-        # Auto-dissolve when BOTH arms are lowered downward out of frame (excluding wide-span casting)
-        if self.enabled and self.hold.ready(
-            "lowered_close", both_arms_dropped_out(f), t, self.cfg.lowered_close_hold
-        ):
-            if self.has_orb:
-                center, scale = self.project(self.position, f)
-                lev_center = (center[0], center[1] - max(20.0, self.radius * scale * 1.25))
-                self.seed += 1
-                self.splashes.append((t, lev_center, max(45.0, self.radius * scale * 1.45), self.seed))
-            self.enabled = False
-            self.has_orb = False
-            self.shots.clear()
-            self.fists.clear()
-            self.fist_times.clear()
-            self.hold.clear()
-            self.pinch_span = None
-            self.scaling = False
-            self.scaling_grace_until = -1e9
-            self.scale_blend = 0.0
-            self.reopen_cooldown = t + self.cfg.water_reopen_cooldown
-            events.append(("water_close", (), 0.0))
-
-        # Intentional summon: only when no held orb exists and after post-close/post-launch cooldown.
-        # Requires a fresh FIST followed within 2.2s by a genuine OPEN palm (never relaxed OTHER!).
-        if (not self.enabled or not self.has_orb) and t >= self.reopen_cooldown:
+        if not self.magic_running:
+            ready = []
             for a in f.arms:
-                not_lowered = not (f.valid and arm_lowered(a, f))
-                is_summon_fist = (
-                    fresh(a)
-                    and not_lowered
-                    and a.shape == Shape.FIST
-                    and (a.openness is None or a.openness < 0.28)
-                )
-                if self.hold.ready(a.side + "fist", is_summon_fist, t, self.cfg.gesture_hold):
-                    self.fists.add(a.side)
-                    self.fist_times[a.side] = t
-                fist_recent = a.side in self.fists and (t - self.fist_times.get(a.side, -1e9) <= 2.2)
-                if not fist_recent:
-                    self.fists.discard(a.side)
-                is_summon_open = (
-                    fist_recent
-                    and fresh(a)
-                    and not_lowered
-                    and a.shape == Shape.OPEN
-                    and (a.openness is None or a.openness >= 0.45)
-                )
-                if self.hold.ready(a.side + "open", is_summon_open, t, self.cfg.gesture_hold):
-                    self.enabled, self.has_orb, self.owner = True, True, a.side
-                    self.radius = 0.075
-                    self.position, self.velocity = self.target(a, f), [0.0] * 3
-                    self.grip_far = True
-                    self.spawned_at = t
-                    self.pinch_span = None
-                    self.pinch_base_radius = 0.075
-                    self.scaling = False
-                    self.scaling_grace_until = -1e9
-                    self.scale_blend = 0.0
-                    self.recall_at = -1e9
-                    self.fists.clear()
-                    self.fist_times.clear()
-                    events.append(("water_open", (a.palm or a.wrist,), 1.0))
-                    break
-        if not self.enabled:
-            self.splashes = [s for s in self.splashes if t - s[0] < 1.05][-8:]
-            splash_objs = tuple(
-                EffectObject(3, center, radius, t - stamp, seed=seed)
-                for stamp, center, radius, seed in self.splashes
-            )
-            return SpellView(
-                mode="water",
-                state="OFF",
-                visibility=1.0 if splash_objs else 0.0,
-                objects=splash_objs,
-                hint="任意一手握拳后摊开，召唤悬浮水球；坐着也可以",
-            ), events
-        a, b = f.arm(self.owner), f.arm("right" if self.owner == "left" else "left")
-        target = self.target(a, f) if fresh(a) else list(self.position)
-        held = self.has_orb and t >= self.recall_at
-        raw_center, scale = self.project(self.position, f)
-        lev_offset_px = max(20.0, self.radius * scale * 1.25)
-        center = (raw_center[0], raw_center[1] - lev_offset_px)
-        self.scaling = False
-
-        def available(arm):
-            return fresh(arm) or (
-                (
-                    (arm.upper_valid or arm.tracked)
-                    and f.valid
-                    and arm.wrist_confidence >= 0.55
-                    and not arm_lowered(arm, f)
-                )
-                or (arm.side == b.side and t - self.hand_seen[b.side] < 0.35 and self.last_b_d < 0.44)
-            )
-
-        if fresh(b):
-            self.last_b_wrist = b.palm or b.wrist
-        b_pt = (
-            (b.palm or b.wrist)
-            if (b.hand_valid or b.upper_valid or b.tracked)
-            else (self.last_b_wrist or b.wrist)
-        )
-        pa = a.palm or a.wrist
-        s_norm = max(1.0, f.scale)
-        b_candidates = [b_pt]
-        if b.wrist and b.wrist != b_pt:
-            b_candidates.append(b.wrist)
-        d_fore = min(
-            (
-                segment_distance(pt, a.elbow, a.wrist)[0]
-                if (a.upper_valid or a.tracked) and distance(a.elbow, a.wrist) > 8.0
-                else distance(pa, pt)
-            )
-            for pt in b_candidates
-        )
-        d_wrist = min(distance(a.wrist, pt) for pt in b_candidates)
-        d_palm = min(distance(pa, pt) for pt in b_candidates)
-        d = min(d_fore, d_wrist, d_palm) / s_norm
-        if fresh(b) or b.upper_valid or b.tracked:
-            self.last_b_d = d
-
-        # Smooth two-hand scaling with hysteresis:
-        # 1. Entry requires both hands OPEN/PINCH (never OTHER/FIST) and not lowered.
-        # 2. Once scaling is active (pinch_span is not None), a 0.22s continuity grace tolerates brief OTHER shape flicker,
-        #    and the orb anchors smoothly at the 50/50 midpoint between both hands without snapping or oscillating!
-        not_lowered_b = not (f.valid and arm_lowered(b, f))
-        not_lowered_a = not (f.valid and arm_lowered(a, f))
-        palm_span_norm = distance(pa, b_pt) / s_norm
-        entry_shapes_ok = a.shape in (Shape.OPEN, Shape.PINCH) and b.shape in (Shape.OPEN, Shape.PINCH)
-        continue_shapes_ok = (
-            self.pinch_span is not None
-            and t <= self.scaling_grace_until
-            and a.shape in (Shape.OPEN, Shape.PINCH, Shape.OTHER)
-            and b.shape in (Shape.OPEN, Shape.PINCH, Shape.OTHER)
-        )
-        second_hand_scaling_ok = (
-            held
-            and fresh(a)
-            and fresh(b)
-            and not_lowered_a
-            and not_lowered_b
-            and (entry_shapes_ok or continue_shapes_ok)
-            and palm_span_norm >= (0.18 if self.pinch_span is not None else 0.22)
-        )
-        resize_ready = self.hold.ready("resize", second_hand_scaling_ok, t, 0.10) or (
-            self.pinch_span is not None and t <= self.scaling_grace_until and second_hand_scaling_ok
-        )
-        if resize_ready:
-            pb = b.palm or b.wrist
-            spacing = distance(pa, pb)
-            midpoint = ((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2)
-            min_spacing = max(self.radius * scale * 0.55, f.scale * 0.22)
-            entry_center_ok = self.pinch_span is not None or distance(midpoint, raw_center) < max(
-                self.radius * scale * 2.60, f.scale * 1.45
-            )
-            if spacing > min_spacing and entry_center_ok:
-                if self.pinch_span is None:
-                    self.pinch_span = max(spacing, 36.0)
-                    self.pinch_base_radius = self.radius
-                if entry_shapes_ok:
-                    self.scaling_grace_until = t + 0.22
-                self.scale_blend = min(
-                    1.0, self.scale_blend + (1.0 - self.scale_blend) * min(1.0, dt * 14.0 + 0.35)
-                )
-                span_ratio = (spacing / self.pinch_span) ** 1.18
-                desired = max(0.045, min(0.58, self.pinch_base_radius * span_ratio))
-                self.radius += (desired - self.radius) * (1 - math.exp(-dt * 11.0))
-                mid_target = self._resize_midpoint(a, b, f)
-                self.resize_target = mid_target
-                target = [x + (m - x) * self.scale_blend for x, m in zip(target, mid_target)]
-                self.scaling = True
-            elif t > self.scaling_grace_until:
-                self.pinch_span = None
-        elif t > self.scaling_grace_until:
-            self.pinch_span = None
-
-        # A brief missing/UNKNOWN observation holds the last measured midpoint; never snap to the owner.
-        if (
-            not self.scaling
-            and held
-            and self.pinch_span is not None
-            and t <= self.scaling_grace_until
-            and self.resize_target is not None
-            and not_lowered_a
-            and not_lowered_b
-            and not any(fresh(h) and h.shape == Shape.FIST for h in (a, b))
-        ):
-            target = list(self.resize_target)
-            self.scaling = True
-        if not self.scaling and held and fresh(a) and fresh(b) and self.scale_blend > 0.01:
-            self.scale_blend = max(0.0, self.scale_blend - dt * 5.0)
-            mid_target = self._resize_midpoint(a, b, f)
-            target = [x + (m - x) * self.scale_blend for x, m in zip(target, mid_target)]
-        elif not self.scaling:
-            self.scale_blend = 0.0
-
-        if held and available(a) and available(b):
-            if d > 0.36:
-                self.grip_far = True
-            palm_sep = d_palm / s_norm
-            opposed_normals = (
-                a.normal is not None
-                and b.normal is not None
-                and sum(x * y for x, y in zip(a.normal, b.normal)) < -0.35
-            )
-            wrist_or_forearm_tap = min(d_fore, d_wrist) / s_norm < 0.38 and (
-                d_palm >= min(d_fore, d_wrist) * 0.95 or not self.scaling
-            )
-            actively_opposed_resize = (
-                opposed_normals
-                and palm_sep > 0.24
-                and d > 0.24
-                and (self.scaling or not wrist_or_forearm_tap)
-            )
-            support_fist_push = fresh(b) and b.shape == Shape.FIST and d < 0.50
-            palm_forward_or_sideways = a.normal is not None and (
-                abs(a.normal[2]) > 0.42 or abs(a.normal[0]) > 0.42
-            )
-            tap_threshold = 0.42 if palm_forward_or_sideways else 0.38
-            grip = (
-                (self.grip_far and d < tap_threshold and not actively_opposed_resize) or support_fist_push
-            ) and t > self.grip_cooldown
-            if self.hold.ready("launch", grip, t, self.cfg.water_grip_hold):
-                events.append(self._launch_orb(a, center, scale, t, f))
-                held = False
-        else:
-            self.hold.ready("launch", False, t, self.cfg.water_grip_hold)
-            if not available(b):
-                # Keep grip_far armed when second hand is out of view so bringing it in to tap wrist always works!
-                self.grip_far = True
-
-        # Additional effortless single-hand launch: deliberate fist-compress after water ball is held steady
-        if (
-            held
-            and fresh(a)
-            and a.shape == Shape.FIST
-            and (a.openness is None or a.openness < 0.22)
-            and t - self.spawned_at > 0.55
-            and t > self.grip_cooldown
-        ):
-            if self.hold.ready("fist_launch", True, t, 0.16):
-                events.append(self._launch_orb(a, center, scale, t, f))
-                held = False
-        else:
-            self.hold.ready("fist_launch", False, t, 0.16)
-
+                eligible = fresh(a) and a.shape == Shape.FIST and not open_over_90(a) and not (f.valid and arm_lowered(a, f))
+                if not eligible:
+                    self.fist_started.pop(a.side,None)
+                    continue
+                began=self.fist_started.setdefault(a.side,t)
+                deadline=began+2.0
+                if t>=deadline-1e-8:
+                    ready.append((deadline,a.side))
+            if ready:
+                # Both may become observable as ready in one delayed frame;
+                # compare their actual observed deadlines, not arm iteration order.
+                earliest=min(deadline for deadline,side in ready)
+                tied=[side for deadline,side in ready if abs(deadline-earliest)<=1e-8]
+                self.owner = 'right' if 'right' in tied else tied[0]
+                self.support = 'left' if self.owner == 'right' else 'right'
+                self.magic_running = self.enabled = True
+                self.opened = self.first_fist_released = False
+                self.session_depth = None
+                self.ray_origin = self.ray_direction = None
+                self.owner_palm = None
+                self.radius = 0.075
+                self.display_radius = f.height * 0.10
+                self.hold.clear()
+                self.fist_started.clear()
+        if self.magic_running:
+            a = f.arm(self.owner)
+            b = f.arm(self.support)
+            # Once locked, lowering the owner must not freeze tracking or transfer ownership.
+            usable = fresh(a) and a.palm is not None
+            # Screen palm anchors update independently of normal validity.
+            if usable:
+                self.ray_origin = self.palm_origin(a,f)
+            if self.scaling and fresh(b) and b.palm is not None:
+                self.support_palm = tuple(b.palm)
+            open_enough = usable and open_over_90(a)
+            if open_enough:
+                self.first_fist_released = True
+            # The first opening has no deadline and need not pass the stricter OPEN classifier.
+            # A closed fist has no reliable open-palm orientation. Establish the first
+            # ray only from an opening observation, then track normally while held.
+            normal_observed = self.update_ray(a,f) if usable and (self.opened or open_enough) else False
+            if usable:
+                self.last_hand_time=t
+                self.palm_wrist_offset=tuple(x-y for x,y in zip(a.palm or a.wrist,a.wrist))
+            if not self.opened and open_enough and normal_observed:
+                self.opened = self.has_orb = True
+                self.opened_at=t
+                events.append(('water_open', (a.palm or a.wrist,), 1.0))
+            tight_fist = usable and not open_enough and a.shape == Shape.FIST and (a.openness is None or a.openness < 0.22)
+            cancel = self.first_fist_released and self.hold.ready('second_fist', tight_fist, t, 0.15)
+            if cancel:
+                center, k = self.project(self.position, f)
+                self.seed += 1
+                if self.has_orb:
+                    self.splashes.append((t, center, max(45.0, self.radius*k*1.45), self.seed))
+                events.append(('water_close', (center,), 1.0))
+                self.end_session(f)
+            elif self.has_orb:
+                # Missing observations retain the last measured 2D palm; no
+                # body-wrist replacement for either palm anchor.
+                bridge=False
+                self.tracking_status='二维掌心实测' if usable else '掌心遮挡，保留最后实测点'
+                intersection=self.palm_intersection(a,b,f) if usable and normal_observed else None
+                if not (usable and normal_observed):
+                    self.intersection_status='unknown'
+                if self.scaling:
+                    if self.intersection_status=='miss':
+                        self.scaling=False
+                        self.resize_span=self.resize_ray_t=None
+                        self.resize_hit=None
+                        self.support_palm=None
+                        self.hold.ready('resize',False,t,0.10)
+                    elif intersection is not None:
+                        span,_=intersection
+                        self.resize_ray_t=self.current_ray_t
+                        desired=max(3.0,min(f.height*0.7,self.resize_radius*span/self.resize_span))
+                        # Deadband suppresses measurement tremor, never changes size outside resizing.
+                        if abs(desired-self.display_radius)>0.5:
+                            self.display_radius=desired
+                else:
+                    if self.hold.ready('resize',intersection is not None and b.palm is not None,t,0.10):
+                        span,_=intersection
+                        self.resize_span,self.resize_radius=span,self.display_radius
+                        self.resize_ray_t=self.current_ray_t
+                        self.support_palm=tuple(b.palm)
+                        self.scaling=True
+                if usable or (self.scaling and fresh(b) and b.palm is not None):
+                    if self.scaling:
+                        # Never overwrite the midpoint with a palm target during a scaling session.
+                        self.position=self.scaling_position(f,b)
+                    else:
+                        self.position=self.target(a,f)
+                # Scaling owns the orb until an observed miss. A noisy normal must not launch it.
+                aimed=(usable and normal_observed and not self.scaling and
+                       self.ray_direction[2]<=-math.cos(math.radians(15)))
+                if self.hold.ready('aim',aimed,t,0.10):
+                    center,_=self.project(self.position,f)
+                    self.seed+=1
+                    self.shots.append(Shot(list(self.position),[n*self.cfg.water_launch_speed for n in self.ray_direction],self.display_radius*self.position[2]/self.camera(f),t,self.seed))
+                    self.shots=self.shots[-8:]
+                    events.append(('water_launch',(center,),1.0))
+                    self.end_session(f)
         previous_positions = {id(shot): list(shot.position) for shot in self.shots}
-        steps = max(1, math.ceil(dt / (1 / 90)))
-        step = dt / steps
-        for _ in range(steps):
-            if held:
-                for i in range(3):
-                    acc = (target[i] - self.position[i]) * self.cfg.water_spring - self.velocity[
-                        i
-                    ] * self.cfg.water_damping
-                    self.velocity[i] += acc * step
-                    self.position[i] += self.velocity[i] * step
-            for shot in self.shots:
-                shot.velocity[1] += self.cfg.water_gravity * step
-                for i in range(3):
-                    shot.position[i] += shot.velocity[i] * step
+        for shot in self.shots:
+            for i in range(3):
+                shot.position[i] += shot.velocity[i]*dt
         objects = []
-        if held:
-            raw_center, scale = self.project(self.position, f)
-            lev_offset_px = max(20.0, self.radius * scale * 1.25)
-            center = (raw_center[0], raw_center[1] - lev_offset_px)
-            objects.append(
-                EffectObject(
-                    1,
-                    center,
-                    self.radius * scale,
-                    t,
-                    velocity=(self.velocity[0] * scale, self.velocity[1] * scale),
-                    depth=self.position[2],
-                )
-            )
+        if self.has_orb:
+            center, k = self.project(self.position, f)
+            objects.append(EffectObject(1, center, self.display_radius, t-self.opened_at, depth=self.position[2]))
         alive = []
         for shot in self.shots:
             center, scale = self.project(shot.position, f)
@@ -558,21 +405,20 @@ class Water:
         self.splashes = [s for s in self.splashes if t - s[0] < 1.1][-8:]
         for stamp, center, radius, seed in self.splashes:
             objects.append(EffectObject(3, center, radius, t - stamp, seed=seed))
-        proj_c, proj_s = self.project(self.position, f)
-        lev_c = (proj_c[0], proj_c[1] - max(20.0, self.radius * proj_s * 1.25))
+        center, k = self.project(self.position, f)
+        ray_start=ray_end=None
+        if self.magic_running and self.ray_origin is not None and self.ray_direction is not None:
+            ray_start,_=self.project(self.ray_origin,f)
+            length=self.resize_ray_t if self.scaling else self.radius+0.12
+            ray_end,_=self.project([x+n*length for x,n in zip(self.ray_origin,self.ray_direction)],f)
         return SpellView(
-            mode="water",
-            state="SCALING" if self.scaling else "HELD" if held else "FLYING",
-            visibility=1.0 if (held or objects) else 0.0,
-            intensity=1.0 if (held or objects) else 0.0,
-            center=lev_c,
-            radius=self.radius * proj_s,
-            caster=self.owner,
+            mode='water', state='SCALING' if self.scaling else 'HELD' if self.has_orb else 'ARMED' if self.enabled else 'FLYING' if self.shots else 'OFF',
+            visibility=1.0 if objects else 0.0, intensity=1.0 if objects else 0.0,
+            center=center, radius=self.display_radius, caster=self.owner,
+            support=self.support, ray_start=ray_start, ray_end=ray_end,
+            palm_line_start=ray_start if self.scaling else None,
+            palm_line_end=self.support_palm if self.scaling else None,
             objects=tuple(objects[-12:]),
-            hint=(
-                "水球悬浮掌心之上；双掌对称夹球可缩放；掌向前/侧身搭腕或握拳发射；拍掌或双臂垂下收起"
-                if held
-                else "水球已高速平飞发射；再次握拳后摊开可召唤新水球"
-            ),
-            quality="水球持续保留；大开合或暂时遮挡不会消失",
+            hint='掌心朝屏幕发射；副手挡住掌心准线缩放；主人手再次握紧收起' if self.has_orb else '主人手张开即可召唤，无等待时限' if self.enabled else '任意一手握拳保持2秒，开始水球术',
+            quality=(f'魔法运行中 | 主人手：{self.owner} | 副手：{self.support} | ' + ('缩放中' if self.scaling else '准线锁定掌心') + ' | ' + self.tracking_status) if self.magic_running else '魔法结束；双手自由，重新握拳2秒开始',
         ), events

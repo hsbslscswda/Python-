@@ -24,7 +24,95 @@ def palm_geometry(hand, world, side):
     for base, tip in ((5, 8), (9, 12), (13, 16), (17, 20)):
         ratio = math.dist(coords[tip], coords[0]) / max(1e-6, math.dist(coords[base], coords[0]))
         extension.append(max(0.0, min(1.0, (ratio - 0.85) / 0.8)))
-    return dict(palm=palm, palm_scale=width, normal=normal, openness=sum(extension) / 4)
+    return dict(palm=palm, palm_scale=width, normal=normal, openness=sum(extension) / 4,
+                hand_world=tuple(coords) if world and len(world) == 21 else (),
+                finger_angles=tuple(angle3(coords[b], coords[j], coords[t]) or 0.0
+                                    for b, j, t in ((5, 6, 8), (9, 10, 12), (13, 14, 16), (17, 18, 20))))
+
+
+def water_palm_orientation(hand, world, side, image_points=None):
+    """Check camera-space alignment before accepting a world-space palm plane."""
+    import numpy as np
+    observed=_checked_palm_orientation(hand,image_points,side)
+    predicted=_checked_palm_orientation(hand,world,side)
+    if predicted['palm_normal'] is None:
+        return observed
+    ids=(0,5,9,13,17)
+    x=np.asarray([[world[i][0],world[i][1]] for i in ids],dtype=float)
+    y=np.asarray([hand[i] for i in ids],dtype=float)
+    x-=x.mean(axis=0);y-=y.mean(axis=0)
+    denom=float((x*x).sum())
+    if denom<1e-12:
+        return observed
+    # Best 2D similarity: correct roll mismatch, and measure non-rigid distortion.
+    aa=float((x*y).sum())/denom
+    bb=float((x[:,0]*y[:,1]-x[:,1]*y[:,0]).sum())/denom
+    fitted=np.column_stack((aa*x[:,0]-bb*x[:,1],bb*x[:,0]+aa*x[:,1]))
+    residual=float(np.linalg.norm(fitted-y))/max(1e-6,float(np.linalg.norm(y)))
+    if residual>0.18:
+        return observed
+    rotation=math.atan2(bb,aa)
+    nx,ny,nz=predicted['palm_normal']
+    corrected=(math.cos(rotation)*nx-math.sin(rotation)*ny,
+               math.sin(rotation)*nx+math.cos(rotation)*ny,nz)
+    predicted['palm_normal']=corrected
+    other=observed['palm_normal']
+    # Blend only agreeing estimates; opposing alternatives must never cancel to zero.
+    if other is not None and sum(a*b for a,b in zip(corrected,other))>0.85:
+        weight=min(0.45,0.20+residual)
+        n=tuple(a*(1-weight)+b*weight for a,b in zip(corrected,other))
+        length=math.sqrt(sum(v*v for v in n))
+        predicted['palm_normal']=tuple(v/length for v in n)
+    # Camera roll correction must not leave the final normal on the opposite
+    # anatomical face. Use the independent image-depth normal when available.
+    final=predicted['palm_normal']
+    if other is not None and sum(a*b for a,b in zip(final,other))<0:
+        predicted['palm_normal']=other
+    return predicted
+
+
+def _checked_palm_orientation(hand, world, side):
+    """Fit the palm's five-point plane in one model coordinate system.
+
+    The least-variance eigenvector is perpendicular to the fitted plane.
+    Anatomical ordering selects its palm-facing sign. Missing/degenerate
+    geometry is unknown; never manufacture a screen-up direction.
+    """
+    import numpy as np
+
+    unknown = dict(palm_normal=None, palm_normal_quality=0.0)
+    if world is None or len(world) != 21 or len(hand) != 21:
+        return unknown
+    points = np.asarray([world[i] for i in (0, 5, 9, 13, 17)], dtype=float)
+    if points.shape != (5, 3) or not np.isfinite(points).all():
+        return unknown
+    centered = points - points.mean(axis=0)
+    values, vectors = np.linalg.eigh(centered.T @ centered / 5.0)
+    largest = max(float(values[2]), 1e-12)
+    spread = float(values[1]) / largest
+    thickness = max(0.0, float(values[0])) / max(float(values[1]), 1e-12)
+    # A line has no unique normal; a badly non-planar palm is not trustworthy.
+    if largest < 1e-10 or spread < 0.015 or thickness > 0.20:
+        return unknown
+    reference = np.cross(points[1] - points[0], points[4] - points[0])
+    ref_length = float(np.linalg.norm(reference))
+    if ref_length < 1e-9:
+        return unknown
+    normal = vectors[:, 0]
+    agreement = float(np.dot(normal, reference / ref_length))
+    if abs(agreement) < 0.70:
+        return unknown
+    normal *= (1.0 if agreement > 0 else -1.0) * (-1.0 if side == 'left' else 1.0)
+    a,b,c = (hand[i] for i in (0,5,17))
+    area = (b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])
+    scale = max(distance(a,b)*distance(a,c),1e-6)
+    sign = -1 if side == 'left' else 1
+    if abs(area)/scale > 0.12 and normal[2]*area*sign < -0.02*scale:
+        return unknown
+    quality = min(1.0, spread / 0.08) * max(0.0, 1.0-thickness/0.25)
+    if quality < 0.2:
+        return unknown
+    return dict(palm_normal=tuple(float(v) for v in normal), palm_normal_quality=quality)
 
 
 def classify(points, previous=Shape.UNKNOWN, world=None):
@@ -191,6 +279,21 @@ class FeatureExtractor:
             q = confidence(wrist)
             prior = self.previous.get(side)
             age = timestamp - self.last_seen.get(side, -99.0)
+            if prior and age < 0.45:
+                # Identity continuity takes priority over noisy anatomical labels
+                # and Pose wrists. Do not let a stationary hand jump to its peer.
+                delta = distance(hand[0], prior[0]) / scale
+                other = "right" if side == "left" else "left"
+                peer = self.previous.get(other)
+                if peer and timestamp-self.last_seen.get(other,-99.0)<0.45:
+                    peer_delta=distance(hand[0],peer[0])/scale
+                    if peer_delta+0.10<delta:
+                        return 9.0
+                if delta>1.8 and age<0.2:
+                    return 9.0
+                category,score=label(index)
+                pose_cost=min(1.0,distance(hand[0],xy(wrist))/scale) if q>=0.35 else 0.0
+                return delta*2.0+pose_cost*0.08+(0.04*score if category!=side else 0.0)
             if q >= 0.35:
                 geometric = distance(hand[0], xy(wrist)) / scale * (0.55 + 0.45 * q)
             elif prior and age < 0.35:
@@ -248,10 +351,14 @@ class FeatureExtractor:
                     kept[winner] = index
             left_id, right_id = kept
 
+        # Snapshot assignment costs before either track is updated. Otherwise
+        # processing left first can change the right-hand acceptance decision.
+        accepted_costs = {(side,index):cost(side,index)
+                          for side,index in (("left",left_id),("right",right_id))}
         result = []
         for side, ids, index in (("left", (11, 13, 15), left_id), ("right", (12, 14, 16), right_id)):
             shoulder, elbow, wrist = ids
-            hand = raw[index] if index is not None and cost(side, index) < 1.15 else ()
+            hand = raw[index] if index is not None and accepted_costs[side,index] < 2.0 else ()
             if hand:
                 size = distance(hand[5], hand[17])
                 prior_size = (
@@ -328,6 +435,9 @@ class FeatureExtractor:
                         xy(wrist),
                     ),
                     **palm_geometry(hand, local_world, side),
+                    **water_palm_orientation(hand, local_world, side,
+                        tuple((p.x*width,p.y*height,p.z*width) for p in hands.hand_landmarks[index])
+                        if hand and index is not None and all(hasattr(p,"z") for p in hands.hand_landmarks[index]) else None),
                     upper_valid=upper_valid,
                 )
             )

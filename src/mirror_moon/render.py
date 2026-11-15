@@ -9,7 +9,8 @@ from PySide6.QtGui import QBrush, QColor, QImage, QPainter, QPainterPath, QPen, 
 from PySide6.QtOpenGLWidgets import QOpenGLWidget
 from PySide6.QtWidgets import QWidget
 
-from .geometry import OneEuro
+from .geometry import OneEuro, fingertip_polygon, open_over_90
+from .domain import Shape
 from .mirror_texture import MIRROR_ASPECT, MIRROR_OUTLINE, mirror_cells, mirror_texture
 from .resources import root
 
@@ -87,7 +88,7 @@ class RenderState:
         # Mirror geometry is already damped in its state machine; avoid another slow filter.
         view = (
             scene.spell
-            if scene.spell.mode == "mirror"
+            if scene.spell.mode in ("mirror", "water")
             else replace(scene.spell, center=(fx, fy), radius=fr, mirror_angle=angle)
         )
 
@@ -104,6 +105,8 @@ class RenderState:
     def interpolated_view(self, now):
         """Time-based display easing between tracking updates; this does not predict missing motion."""
         spell = self.scene.spell
+        if spell.mode == "water":
+            return spell
         if spell.visibility <= 0.001 or self.last_interp_t is None or now <= self.last_interp_t:
             self.display_center = spell.center
             self.display_radius = spell.radius
@@ -476,15 +479,28 @@ def draw_debug(painter, data, width, height):
     painter.save()
     source_transform(painter, data, width, height)
     painter.setPen(QPen(QColor("#d9c69d"), 2))
+    spell=data.scene.spell
+    if spell.mode == "water" and spell.ray_start is not None and spell.ray_end is not None:
+        painter.setPen(QPen(QColor("#48e8dd"), 2))
+        painter.drawLine(QPointF(*spell.ray_start),QPointF(*spell.ray_end))
+        painter.drawEllipse(QPointF(*spell.ray_start),5,5)
+        if spell.state == "SCALING":
+            painter.setPen(QPen(QColor("#ff79cf"),2))
+            if spell.palm_line_start is not None and spell.palm_line_end is not None:
+                painter.drawLine(QPointF(*spell.palm_line_start),QPointF(*spell.palm_line_end))
+                painter.drawEllipse(QPointF(*spell.palm_line_end),6,6)
+            painter.drawEllipse(QPointF(*spell.center),3,3)
+            painter.setPen(QPen(QColor("#48e8dd"),2))
+        if spell.support:
+            hand=data.scene.features.arm(spell.support)
+            if hand.hand_valid and (open_over_90(hand) or spell.state == "SCALING") and len(hand.landmarks)==21:
+                painter.drawPolygon(QPolygonF([QPointF(*point) for point in fingertip_polygon(hand.landmarks)]))
     for arm in data.scene.features.arms:
         painter.setPen(
             QPen(QColor("#f2cd65"), 2)
             if arm.hand_valid
             else QPen(QColor("#aa9971"), 1.5, Qt.PenStyle.DashLine)
         )
-        if arm.upper_valid or (data.scene.features.valid and arm.tracked):
-            painter.drawLine(QPointF(*arm.shoulder), QPointF(*arm.elbow))
-            painter.drawLine(QPointF(*arm.elbow), QPointF(*arm.wrist))
         for point in arm.landmarks:
             painter.drawEllipse(QPointF(*point), 2, 2)
     painter.restore()
@@ -679,7 +695,7 @@ def draw_object(p, obj, now):
         grad.setColorAt(0.75, QColor(10, 72, 120, 180))
         grad.setColorAt(1, QColor(75, 164, 190, 230))
         p.setBrush(QBrush(grad))
-        p.drawEllipse(QPointF(x, y), r * (1 + 0.025 * math.sin(now * 5)), r)
+        p.drawEllipse(QPointF(x, y), r if obj.kind == 1 else r * (1 + 0.025 * math.sin(now * 5)), r)
         p.setBrush(QColor(205, 240, 250, 190))
         p.drawEllipse(QPointF(x - r * 0.30, y - r * 0.35), r * 0.16, r * 0.09)
     elif obj.kind == 3:

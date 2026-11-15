@@ -158,3 +158,30 @@ def both_arms_dropped_out(frame) -> bool:
         and a.wrist[1] >= frame.height
         for a in frame.arms
     )
+
+
+def fingertip_polygon(landmarks):
+    """Outer envelope of wrist, fingertips, thumb side and little-finger side."""
+    if len(landmarks) != 21:
+        return ()
+    pts=sorted(set(tuple(landmarks[i]) for i in (0,1,2,3,4,8,12,16,17,18,19,20)))
+    if not all(math.isfinite(v) for p in pts for v in p):
+        return ()
+    def cross2(o,a,b):
+        return (a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0])
+    lower=[]
+    for p in pts:
+        while len(lower)>=2 and cross2(lower[-2],lower[-1],p)<=0:lower.pop()
+        lower.append(p)
+    upper=[]
+    for p in reversed(pts):
+        while len(upper)>=2 and cross2(upper[-2],upper[-1],p)<=0:upper.pop()
+        upper.append(p)
+    return tuple(lower[:-1]+upper[:-1]) if len(pts)>=3 else ()
+
+
+def open_over_90(arm):
+    """Same four-finger joint-angle criterion as the owner's opening gesture."""
+    return (arm.hand_valid and len(arm.finger_angles)==4 and
+            all(math.isfinite(v) for v in arm.finger_angles) and
+            sum(v>90.0 for v in arm.finger_angles)>=3)

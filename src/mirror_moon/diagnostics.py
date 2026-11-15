@@ -76,10 +76,12 @@ def decode_features(value):
             a[key] = tuple(a[key])
         if a.get("pose_wrist") is not None:
             a["pose_wrist"] = tuple(a["pose_wrist"])
-        for key in ("palm", "normal"):
+        for key in ("palm", "normal", "palm_normal"):
             if a.get(key) is not None:
                 a[key] = tuple(a[key])
         a["landmarks"] = tuple(tuple(p) for p in a["landmarks"])
+        a["hand_world"] = tuple(tuple(p) for p in a.get("hand_world", ()))
+        a["finger_angles"] = tuple(a.get("finger_angles", ()))
         a["shape"] = Shape(a["shape"])
         arms.append(Arm(**a))
     value["arms"] = tuple(arms)
